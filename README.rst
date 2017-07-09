@@ -1,0 +1,23 @@
+Nirum services as WSGI apps
+===========================
+
+This package provides ``nirum_wsgi.WsgiApp`` class which adapts a given
+Nirum service to a WSGI application:
+
+.. code-block:: python
+
+   from youtservice import YourService
+   from nirum_wsgi import WsgiApp
+
+   class YourServiceImpl(YourService):
+       ...
+
+   app = WsgiApp(YourServiceImpl())
+
+There's a development-purpose CLI launcher named ``nirum-server`` as well:
+
+.. code-block:: bash
+
+   nirum-server -H 0.0.0.0 -p 8080 --debug 'yourserviceimpl:YourServiceImpl()'
+
+.. include:: CHANGES.rst
