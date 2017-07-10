@@ -5,6 +5,10 @@ Nirum services as WSGI apps
    :target: https://travis-ci.org/spoqa/nirum-python-wsgi
    :alt: Build status
 
+.. image:: https://badge.fury.io/py/nirum-wsgi.svg
+   :target: https://pypi.org/project/nirum-wsgi/
+   :alt: Latest PyPI version
+
 This package provides ``nirum_wsgi.WsgiApp`` class which adapts a given
 Nirum service to a WSGI application:
 
