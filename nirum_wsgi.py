@@ -21,7 +21,7 @@ from werkzeug.routing import Map, Rule
 from werkzeug.serving import run_simple
 from werkzeug.wrappers import Request, Response
 
-__version__ = '0.1.0'
+__version__ = '0.2.0'
 __all__ = 'WsgiApp',
 
 
