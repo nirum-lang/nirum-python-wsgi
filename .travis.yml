@@ -1,8 +1,5 @@
 language: python
 python: [2.7, 3.4, 3.5, 3.6]
-env:
-# Remove following environment variables after nirum-python 0.6.0 is released.
-- DEVRUNTIME_REPO=dahlia/nirum-python DEVRUNTIME_REF=transport
 install:
 - pip install tox-travis
 - mkdir "$HOME/bin"
