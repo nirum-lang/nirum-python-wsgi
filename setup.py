@@ -78,6 +78,7 @@ setup(
     description='Nirum services as WSGI apps',
     long_description=readme(),
     url='https://github.com/spoqa/nirum-python-wsgi',
+    bugtrack_url='https://github.com/spoqa/nirum/issues',
     author='Nirum team',
     license='MIT license',
     py_modules=['nirum_wsgi'],
