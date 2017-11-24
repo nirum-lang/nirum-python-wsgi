@@ -1,13 +1,15 @@
 import collections
 import json
 
-from fixture import BadRequest, MusicService, Unknown
+from fixture import (BadRequest, MusicService, Unknown,
+                     UnsatisfiedParametersService)
 from pytest import fixture, mark, raises
 from six import text_type
 from werkzeug.test import Client
 from werkzeug.wrappers import Response
 
-from nirum_wsgi import WsgiApp, import_string
+from nirum_wsgi import (AnnotationError, WsgiApp,
+                        compile_uri_template, import_string)
 
 
 class MusicServiceImpl(MusicService):
@@ -15,6 +17,7 @@ class MusicServiceImpl(MusicService):
     music_map = {
         u'damien rice': [u'9 crimes', u'Elephant'],
         u'ed sheeran': [u'Thinking out loud', u'Photograph'],
+        u'damien': [u'rice'],
     }
 
     def get_music_by_artist_name(self, artist_name):
@@ -47,13 +50,6 @@ def fx_test_client(fx_music_wsgi):
     return Client(fx_music_wsgi, Response)
 
 
-def test_wsgi_app_ping(fx_music_wsgi, fx_test_client):
-    assert fx_music_wsgi.service
-    response = fx_test_client.get('/ping/')
-    data = json.loads(response.get_data(as_text=True))
-    assert 'Ok' == data
-
-
 def assert_response(response, status_code, expect_json):
     assert response.status_code == status_code, response.get_data(as_text=True)
     actual_response_json = json.loads(
@@ -65,8 +61,7 @@ def assert_response(response, status_code, expect_json):
 def test_wsgi_app_error(fx_test_client):
     # method not allowed
     assert_response(
-        fx_test_client.get('/?method=get_music_by_artist_name'),
-        405,
+        fx_test_client.get('/?method=get_music_by_artist_name'), 405,
         {
             '_type': 'error',
             '_tag': 'method_not_allowed',
@@ -81,7 +76,7 @@ def test_wsgi_app_error(fx_test_client):
         {
             '_type': 'error',
             '_tag': 'bad_request',
-            'message': "A query string parameter method= is missing."
+            'message': u'`method` is missing.',
 
         }
     )
@@ -92,7 +87,7 @@ def test_wsgi_app_error(fx_test_client):
         {
             '_type': 'error',
             '_tag': 'bad_request',
-            'message': "Service dosen't have procedure named 'foo'."
+            'message': 'No service method `foo` found.'
 
         }
     )
@@ -174,13 +169,13 @@ def test_wsgi_app_method(fx_test_client, payload, expected_json):
 
 
 def test_wsgi_app_http_error(fx_test_client):
-    response = fx_test_client.post('/foobar')
-    assert response.status_code == 404
+    response = fx_test_client.post('/foobar')  # 404
+    assert response.status_code == 400
     response_json = json.loads(response.get_data(as_text=True))
     assert response_json == {
         '_type': 'error',
-        '_tag': 'not_found',
-        'message': 'The requested URL /foobar was not found on this service.',
+        '_tag': u'bad_request',
+        'message': u'`method` is missing.',
     }
 
 
@@ -196,8 +191,7 @@ def test_wsgi_app_with_behind_name(fx_test_client):
         {
             '_type': 'error',
             '_tag': 'bad_request',
-            'message': "Service dosen't have procedure named "
-                       "'get_artist_by_music'."
+            'message': 'No service method `get_artist_by_music` found.'
 
         }
     )
@@ -240,6 +234,59 @@ def test_wsgi_app_make_response_arity_check(arity):
                                    '(status_code, headers, content), not ')
 
 
+@mark.parametrize('uri_template, pattern, variables, valid, invalid', [
+    (
+        '/foo/{id}/bar.txt',
+        r'\/foo\/(?P<id>.+?)\/bar\.txt$',
+        {'id'},
+        ['/foo/xyz/bar.txt', '/foo/123/bar.txt'],
+        ['/bar/xyz/bar.txt', '/foo/bar.txt'],
+    ),
+    (
+        '/foo/{id}',
+        r'\/foo\/(?P<id>.+?)$',
+        {'id'},
+        ['/foo/xyz'],
+        ['/bar/xyz/bar.txt'],
+    ),
+    (
+        '/foo/{foo-id}',
+        r'\/foo\/(?P<foo_id>.+?)$',
+        {'foo_id'},
+        ['/foo/xyz'],
+        ['/bar/xyz/bar.txt'],
+    ),
+    (
+        '/foo/{id}/bar/{id2}',
+        r'\/foo\/(?P<id>.+?)\/bar\/(?P<id2>.+?)$',
+        {'id', 'id2'},
+        ['/foo/xyz/bar/123', '/foo/123/bar/abc'],
+        ['/bar/xyz/bar.txt', '/bar/bar.txt'],
+    ),
+    (
+        '/foo/bar',
+        r'\/foo\/bar$',
+        set(),
+        ['/foo/bar'],
+        ['/lorem/ipsum', '/prefix/foo/bar', '/foo/bar/postfix'],
+    ),
+])
+def test_compile_uri_template(uri_template, pattern, variables, valid,
+                              invalid):
+    p, compiled_variables = compile_uri_template(uri_template)
+    assert compiled_variables == variables
+    assert p.pattern == pattern
+    for v in valid:
+        assert p.match(v), v
+    for v in invalid:
+        assert not p.match(v), v
+
+
+def test_compile_uri_template_duplicate_variable_error():
+    with raises(AnnotationError):
+        compile_uri_template('/foo/{var}/bar/{var}')
+
+
 def test_import_string():
     assert import_string('collections:OrderedDict') == collections.OrderedDict
     assert (import_string('collections:OrderedDict({"a": 1})') ==
@@ -253,3 +300,21 @@ def test_import_string():
     with raises(ImportError):
         # coudn't import
         import_string('os.hello:world')
+
+
+def test_unsatisfied_uri_template_parameters():
+    s = UnsatisfiedParametersService()
+    with raises(AnnotationError) as e:
+        WsgiApp(s)
+    assert str(e.value) == (
+        '"/foo/{bar}/" does not fully satisfy all parameters of foo_bar_baz() '
+        'method; unsatisfied parameters are: baz, foo'
+    )
+
+
+def test_http_resource_route(fx_test_client):
+    assert_response(
+        fx_test_client.get('/artists/damien/'),
+        200,
+        [u'rice'],
+    )
