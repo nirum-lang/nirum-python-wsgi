@@ -14,7 +14,7 @@ from nirum.exc import (NirumProcedureArgumentRequiredError,
                        NirumProcedureArgumentValueError)
 from nirum.serialize import serialize_meta
 from nirum.service import Service
-from six import integer_types
+from six import integer_types, text_type
 from six.moves import reduce
 from werkzeug.http import HTTP_STATUS_CODES
 from werkzeug.serving import run_simple
@@ -368,8 +368,9 @@ class WsgiApp:
 
 
 def compile_uri_template(template):
-    if isinstance(template, bytes):
-        template = template.decode()
+    if not isinstance(template, text_type):
+        raise TypeError('template must be a Unicode string, not ' +
+                        repr(template))
     value_pattern = re.compile('\{([a-zA-Z0-9_-]+)\}')
     result = []
     variables = set()

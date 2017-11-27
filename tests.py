@@ -236,35 +236,35 @@ def test_wsgi_app_make_response_arity_check(arity):
 
 @mark.parametrize('uri_template, pattern, variables, valid, invalid', [
     (
-        '/foo/{id}/bar.txt',
+        u'/foo/{id}/bar.txt',
         r'\/foo\/(?P<id>.+?)\/bar\.txt$',
         {'id'},
         ['/foo/xyz/bar.txt', '/foo/123/bar.txt'],
         ['/bar/xyz/bar.txt', '/foo/bar.txt'],
     ),
     (
-        '/foo/{id}',
+        u'/foo/{id}',
         r'\/foo\/(?P<id>.+?)$',
         {'id'},
         ['/foo/xyz'],
         ['/bar/xyz/bar.txt'],
     ),
     (
-        '/foo/{foo-id}',
+        u'/foo/{foo-id}',
         r'\/foo\/(?P<foo_id>.+?)$',
         {'foo_id'},
         ['/foo/xyz'],
         ['/bar/xyz/bar.txt'],
     ),
     (
-        '/foo/{id}/bar/{id2}',
+        u'/foo/{id}/bar/{id2}',
         r'\/foo\/(?P<id>.+?)\/bar\/(?P<id2>.+?)$',
         {'id', 'id2'},
         ['/foo/xyz/bar/123', '/foo/123/bar/abc'],
         ['/bar/xyz/bar.txt', '/bar/bar.txt'],
     ),
     (
-        '/foo/bar',
+        u'/foo/bar',
         r'\/foo\/bar$',
         set(),
         ['/foo/bar'],
@@ -284,7 +284,7 @@ def test_compile_uri_template(uri_template, pattern, variables, valid,
 
 def test_compile_uri_template_duplicate_variable_error():
     with raises(AnnotationError):
-        compile_uri_template('/foo/{var}/bar/{var}')
+        compile_uri_template(u'/foo/{var}/bar/{var}')
 
 
 def test_import_string():
