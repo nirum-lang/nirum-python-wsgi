@@ -21,7 +21,8 @@ from werkzeug.serving import run_simple
 from werkzeug.wrappers import Request, Response
 
 __version__ = '0.2.0'
-__all__ = 'AnnotationError', 'NoJsonError', 'ServiceMethodError', 'WsgiApp'
+__all__ = ('AnnotationError', 'InvalidJsonError', 'ServiceMethodError',
+           'WsgiApp')
 
 
 def parse_json_payload(request):
@@ -30,15 +31,15 @@ def parse_json_payload(request):
         try:
             json_payload = json.loads(payload)
         except (TypeError, ValueError):
-            raise NoJsonError(payload)
+            raise InvalidJsonError(payload)
         else:
             return json_payload
     else:
         return {}
 
 
-class NoJsonError(ValueError):
-    """Exception raised when payload coudn't be parsed to JSON"""
+class InvalidJsonError(ValueError):
+    """Exception raised when a payload is not a valid JSON."""
 
 
 class AnnotationError(ValueError):
@@ -148,7 +149,7 @@ class WsgiApp:
                 else:
                     try:
                         payload = parse_json_payload(request)
-                    except NoJsonError as e:
+                    except InvalidJsonError as e:
                         error_raised = self.error(
                             400, request,
                             message="Invalid JSON payload: '{!s}'.".format(e)
@@ -161,7 +162,7 @@ class WsgiApp:
             service_method = request.args.get('method')
             try:
                 payload = parse_json_payload(request)
-            except NoJsonError as e:
+            except InvalidJsonError as e:
                 error_raised = self.error(
                     400, request,
                     message="Invalid JSON payload: '{!s}'.".format(e)
