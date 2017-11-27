@@ -103,7 +103,7 @@ class WsgiApp:
             rules.append((
                 uri_template,
                 path_pattern,
-                http_verb,  # HTTP verb
+                http_verb,
                 method_name  # Service method
             ))
         rules.sort(key=lambda rule: rule[0], reverse=True)
