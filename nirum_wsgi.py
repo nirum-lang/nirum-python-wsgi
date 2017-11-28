@@ -8,21 +8,46 @@ import json
 import re
 import typing
 
+from nirum.datastructures import List
 from nirum.deserialize import deserialize_meta
 from nirum.exc import (NirumProcedureArgumentRequiredError,
                        NirumProcedureArgumentValueError)
 from nirum.serialize import serialize_meta
 from nirum.service import Service
-from six import integer_types
+from six import integer_types, text_type
 from six.moves import reduce
-from werkzeug.exceptions import HTTPException
 from werkzeug.http import HTTP_STATUS_CODES
-from werkzeug.routing import Map, Rule
 from werkzeug.serving import run_simple
 from werkzeug.wrappers import Request, Response
 
 __version__ = '0.2.0'
-__all__ = 'WsgiApp',
+__all__ = ('AnnotationError', 'InvalidJsonError', 'ServiceMethodError',
+           'WsgiApp')
+
+
+def parse_json_payload(request):
+    payload = request.get_data(as_text=True)
+    if payload:
+        try:
+            json_payload = json.loads(payload)
+        except (TypeError, ValueError):
+            raise InvalidJsonError(payload)
+        else:
+            return json_payload
+    else:
+        return {}
+
+
+class InvalidJsonError(ValueError):
+    """Exception raised when a payload is not a valid JSON."""
+
+
+class AnnotationError(ValueError):
+    """Exception raised when the given Nirum annotation is invalid."""
+
+
+class ServiceMethodError(LookupError):
+    """Exception raised when a method is not found."""
 
 
 class WsgiApp:
@@ -32,12 +57,6 @@ class WsgiApp:
     :type service: :class:`nirum.service.Service`
 
     """
-
-    #: (:class:`werkzeug.routing.Map`) url map
-    url_map = Map([
-        Rule('/', endpoint='rpc'),
-        Rule('/ping/', endpoint='ping'),
-    ])
 
     def __init__(self, service):
         if not isinstance(service, Service):
@@ -50,6 +69,46 @@ class WsgiApp:
                 '{1!r}'.format(Service, service)
             )
         self.service = service
+        rules = []
+        method_annoations = service.__nirum_method_annotations__
+        service_methods = service.__nirum_service_methods__
+        for method_name, annotations in method_annoations.items():
+            try:
+                params = annotations['http_resource']
+            except KeyError:
+                continue
+            if not params['path'].lstrip('/'):
+                raise AnnotationError(
+                    'the root resource is reserved; '
+                    'disallowed to route to the root'
+                )
+            try:
+                uri_template = params['path']
+                path_pattern, variables = compile_uri_template(uri_template)
+                http_verb = params['method']
+            except KeyError as e:
+                raise AnnotationError('missing annotation parameter: ' +
+                                      str(e))
+            parameters = {p
+                          for p in service_methods[method_name]
+                          if not p.startswith('_')}
+            unsatisfied_parameters = parameters - variables
+            if unsatisfied_parameters:
+                raise AnnotationError(
+                    '"{0}" does not fully satisfy all parameters of {1}() '
+                    'method; unsatisfied parameters are: {2}'.format(
+                        uri_template, method_name,
+                        ', '.join(sorted(unsatisfied_parameters))
+                    )
+                )
+            rules.append((
+                uri_template,
+                path_pattern,
+                http_verb,
+                method_name  # Service method
+            ))
+        rules.sort(key=lambda rule: rule[0], reverse=True)
+        self.rules = List(rules)
 
     def __call__(self, environ, start_response):
         """
@@ -67,75 +126,86 @@ class WsgiApp:
         :param start_response:
 
         """
-        urls = self.url_map.bind_to_environ(environ)
         request = Request(environ)
-        try:
-            endpoint, args = urls.match()
-        except HTTPException as e:
-            return self.error(e.code, request)(environ, start_response)
+        service_methods = self.service.__nirum_service_methods__
+        error_raised = None
+        for _, pattern, verb, method_name in self.rules:
+            path_info = environ['PATH_INFO']
+            if isinstance(path_info, bytes):
+                # FIXME Decode properly; URI is not unicode
+                path_info = path_info.decode()
+            match = pattern.match(path_info)
+            if match and environ['REQUEST_METHOD'] == verb.upper():
+                routed = True
+                service_method = method_name
+                if verb in ('GET', 'DELETE'):
+                    method_parameters = {
+                        k: v
+                        for k, v in service_methods[method_name].items()
+                        if not k.startswith('_')
+                    }
+                    # TODO Parsing query string
+                    payload = {p: match.group(p) for p in method_parameters}
+                else:
+                    try:
+                        payload = parse_json_payload(request)
+                    except InvalidJsonError as e:
+                        error_raised = self.error(
+                            400, request,
+                            message="Invalid JSON payload: '{!s}'.".format(e)
+                        )
+                break
         else:
-            procedure = getattr(self, endpoint)
-            response = procedure(request, args)
-            return response(environ, start_response)
-
-    def ping(self, request, args):
-        return Response(
-            '"Ok"',
-            200,
-            content_type='application/json'
-        )
-
-    def rpc(self, request, args):
-        """RPC
-
-        :param request:
-        :args ???:
-
-        """
-        if request.method != 'POST':
-            return self.error(405, request)
-        payload = request.get_data(as_text=True) or '{}'
-        request_method = request.args.get('method')
-        if not request_method:
-            return self.error(
+            routed = False
+            if request.method != 'POST':
+                error_raised = self.error(405, request)
+            service_method = request.args.get('method')
+            try:
+                payload = parse_json_payload(request)
+            except InvalidJsonError as e:
+                error_raised = self.error(
+                    400, request,
+                    message="Invalid JSON payload: '{!s}'.".format(e)
+                )
+        if error_raised:
+            response = error_raised
+        elif service_method:
+            try:
+                response = self.rpc(request, service_method, payload)
+            except ServiceMethodError:
+                response = self.error(
+                    404 if routed else 400, request,
+                    message='No service method `{}` found.'.format(
+                        service_method
+                    )
+                )
+        else:
+            response = self.error(
                 400, request,
-                message="A query string parameter method= is missing."
+                message="`method` is missing."
             )
+        return response(environ, start_response)
+
+    def rpc(self, request, service_method, request_json):
         name_map = self.service.__nirum_method_names__
         try:
-            method_facial_name = name_map.behind_names[request_method]
+            method_facial_name = name_map.behind_names[service_method]
         except KeyError:
-            return self.error(
-                400,
-                request,
-                message="Service dosen't have procedure named '{}'.".format(
-                    request_method
-                )
-            )
+            raise ServiceMethodError()
         try:
-            service_method = getattr(self.service, method_facial_name)
+            func = getattr(self.service, method_facial_name)
         except AttributeError:
             return self.error(
                 400,
                 request,
-                message="Service has no procedure '{}'.".format(
-                    request_method
-                )
+                message="Service has no procedure '{}'.".format(service_method)
             )
-        if not callable(service_method):
+        if not callable(func):
             return self.error(
                 400, request,
                 message="Remote procedure '{}' is not callable.".format(
-                    request_method
+                    service_method
                 )
-            )
-        try:
-            request_json = json.loads(payload)
-        except ValueError:
-            return self.error(
-                400,
-                request,
-                message="Invalid JSON payload: '{}'.".format(payload)
             )
         type_hints = self.service.__nirum_service_methods__[method_facial_name]
         try:
@@ -151,7 +221,7 @@ class WsgiApp:
             method_error_types = method_error_types.get
         method_error = method_error_types(method_facial_name, ())
         try:
-            result = service_method(**arguments)
+            result = func(**arguments)
         except method_error as e:
             return self._raw_response(400, serialize_meta(e))
         return_type = type_hints['_return']
@@ -164,7 +234,7 @@ class WsgiApp:
                 message="Incorrect return type '{0}' "
                         "for '{1}'. expected '{2}'.".format(
                             typing._type_repr(result.__class__),
-                            request_method,
+                            service_method,
                             typing._type_repr(return_type)
                         )
             )
@@ -296,6 +366,30 @@ class WsgiApp:
                 )
             )
         return Response(content, status_code, headers, **kwargs)
+
+
+def compile_uri_template(template):
+    if not isinstance(template, text_type):
+        raise TypeError('template must be a Unicode string, not ' +
+                        repr(template))
+    value_pattern = re.compile('\{([a-zA-Z0-9_-]+)\}')
+    result = []
+    variables = set()
+    last_pos = 0
+    for match in value_pattern.finditer(template):
+        variable = match.group(1).replace(u'-', u'_')
+        result.append(re.escape(template[last_pos:match.start()]))
+        result.append(u'(?P<')
+        result.append(variable)
+        result.append(u'>.+?)')
+        last_pos = match.end()
+        if variable in variables:
+            raise AnnotationError('every variable must not be duplicated: ' +
+                                  variable)
+        variables.add(variable)
+    result.append(re.escape(template[last_pos:]))
+    result.append(u'$')
+    return re.compile(u''.join(result)), variables
 
 
 IMPORT_RE = re.compile(

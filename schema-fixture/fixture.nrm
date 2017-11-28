@@ -26,10 +26,16 @@ unboxed c (b);
 union hello-error = unknown | bad-request;
 
 service music-service (
+    @http-resource(method="GET", path="/artists/{artist-name}/")
     [text] get-music-by-artist-name (text artist-name) throws hello-error,
     text incorrect-return (),
     text get-artist-by-music/find-artist (text music/norae),
     text raise-application-error-request (),
+);
+
+service unsatisfied-parameters-service (
+    @http-resource(method="GET", path="/foo/{bar}/")
+    text foo-bar-baz(text foo, text bar, text baz),
 );
 
 unboxed token (uuid);
