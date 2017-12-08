@@ -1,8 +1,8 @@
 import collections
 import json
 
-from fixture import (BadRequest, MusicService, Unknown,
-                     UnsatisfiedParametersService)
+from fixture import (BadRequest, MusicService, SatisfiedParametersService,
+                     Unknown, UnsatisfiedParametersService)
 from pytest import fixture, mark, raises
 from six import text_type
 from werkzeug.test import Client
@@ -310,6 +310,10 @@ def test_unsatisfied_uri_template_parameters():
         '"/foo/{bar}/" does not fully satisfy all parameters of foo_bar_baz() '
         'method; unsatisfied parameters are: baz, foo'
     )
+    # As parameter names overlapped to Python keywords append an underscore
+    # to their names, it should deal with the case as well.
+    s = SatisfiedParametersService()
+    WsgiApp(s)  # Should not raise AnnotationError
 
 
 def test_http_resource_route(fx_test_client):
