@@ -38,6 +38,11 @@ service unsatisfied-parameters-service (
     text foo-bar-baz(text foo, text bar, text baz),
 );
 
+service satisfied-parameters-service (
+    @http-resource(method="GET", path="/{from}/{to}/")
+    text python-keyword(text from, text to),
+);
+
 unboxed token (uuid);
 
 record complex-key-map ({point: point} value);

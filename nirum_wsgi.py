@@ -89,9 +89,9 @@ class WsgiApp:
             except KeyError as e:
                 raise AnnotationError('missing annotation parameter: ' +
                                       str(e))
-            parameters = {p
-                          for p in service_methods[method_name]
-                          if not p.startswith('_')}
+            parameters = frozenset(
+                service_methods[method_name]['_names'].values()
+            )
             unsatisfied_parameters = parameters - variables
             if unsatisfied_parameters:
                 raise AnnotationError(
