@@ -322,3 +322,54 @@ def test_http_resource_route(fx_test_client):
         200,
         [u'rice'],
     )
+
+
+def test_cors():
+    app = WsgiApp(
+        MusicServiceImpl(),
+        allowed_origins=frozenset(['example.com'])
+    )
+    client = Client(app, Response)
+
+    def split(header, lower=False):
+        vs = map(str.strip, header.split(','))
+        if lower:
+            vs = map(str.lower, vs)
+        return frozenset(vs)
+
+    resp = client.options('/?method=get_music_by_artist_name', headers={
+        'Origin': 'https://example.com',
+        'Access-Control-Request-Method': 'POST',
+    })
+    assert resp.status_code == 200
+    assert resp.headers['Access-Control-Allow-Origin'] == 'https://example.com'
+    assert split(resp.headers['Access-Control-Allow-Methods']) == {
+        'POST', 'OPTIONS',
+    }
+    assert 'origin' in split(resp.headers['Vary'], lower=True)
+
+    resp2 = client.post(
+        '/?method=get_music_by_artist_name',
+        headers={
+            'Origin': 'https://example.com',
+            'Access-Control-Request-Method': 'POST',
+            'Content-Type': 'application/json',
+        },
+        data=json.dumps({'artist_name': 'damien'})
+    )
+    assert resp2.status_code == 200, resp2.get_data(as_text=True)
+    assert resp2.headers['Access-Control-Allow-Origin'] == \
+        'https://example.com'
+    assert {'POST', 'OPTIONS'} == split(
+        resp2.headers['Access-Control-Allow-Methods']
+    )
+    assert 'origin' in split(resp2.headers['Vary'], lower=True)
+
+    resp3 = client.options('/?method=get_music_by_artist_name', headers={
+        'Origin': 'https://disallowed.com',
+        'Access-Control-Request-Method': 'POST',
+    })
+    assert resp3.status_code == 200
+    allow_origin = resp3.headers.get('Access-Control-Allow-Origin', '')
+    assert 'disallowed.com' not in allow_origin
+    # TODO: URIs mapped through @http-resource also should be implemented
