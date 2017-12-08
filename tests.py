@@ -1,7 +1,8 @@
 import collections
 import json
 
-from fixture import (BadRequest, MusicService, SatisfiedParametersService,
+from fixture import (BadRequest, CorsVerbService, MusicService,
+                     SatisfiedParametersService,
                      Unknown, UnsatisfiedParametersService)
 from pytest import fixture, mark, raises
 from six import text_type
@@ -38,6 +39,18 @@ class MusicServiceImpl(MusicService):
 
     def raise_application_error_request(self):
         raise ValueError('hello world')
+
+
+class CorsVerbServiceImpl(CorsVerbService):
+
+    def get_foo(self, foo):
+        return True
+
+    def update_foo(self, foo):
+        return True
+
+    def delete_bar(self, bar):
+        return True
 
 
 @fixture
@@ -324,19 +337,19 @@ def test_http_resource_route(fx_test_client):
     )
 
 
+def split(header, lower=False):
+    vs = [h.strip() for h in header.split(',')]
+    if lower:
+        vs = [v.lower() for v in vs]
+    return frozenset(vs)
+
+
 def test_cors():
     app = WsgiApp(
         MusicServiceImpl(),
         allowed_origins=frozenset(['example.com'])
     )
     client = Client(app, Response)
-
-    def split(header, lower=False):
-        vs = map(str.strip, header.split(','))
-        if lower:
-            vs = map(str.lower, vs)
-        return frozenset(vs)
-
     resp = client.options('/?method=get_music_by_artist_name', headers={
         'Origin': 'https://example.com',
         'Access-Control-Request-Method': 'POST',
@@ -372,4 +385,50 @@ def test_cors():
     assert resp3.status_code == 200
     allow_origin = resp3.headers.get('Access-Control-Allow-Origin', '')
     assert 'disallowed.com' not in allow_origin
-    # TODO: URIs mapped through @http-resource also should be implemented
+
+
+@mark.parametrize(
+    'url, allow_methods, request_method',
+    [
+        (u'/foo/abc/', {u'GET', u'PUT', u'OPTIONS'}, u'GET'),
+        (u'/foo/abc/', {u'GET', u'PUT', u'OPTIONS'}, u'PUT'),
+        (u'/bar/abc/', {u'DELETE', u'OPTIONS'}, u'DELETE'),
+    ],
+)
+def test_cors_http_resouce(url, allow_methods, request_method):
+    app = WsgiApp(
+        CorsVerbServiceImpl(),
+        allowed_origins=frozenset(['example.com'])
+    )
+    client = Client(app, Response)
+    origin = u'https://example.com'
+    resp = client.options(url, headers={
+        'Origin': origin,
+        'Access-Control-Request-Method': request_method,
+    })
+    assert resp.status_code == 200
+    assert resp.headers['Access-Control-Allow-Origin'] == origin
+    assert split(resp.headers['Access-Control-Allow-Methods']) == allow_methods
+    assert u'origin' in split(resp.headers['Vary'], lower=True)
+    resp2 = getattr(client, request_method.lower())(
+        url,
+        headers={
+            'Origin': u'https://example.com',
+            'Access-Control-Request-Method': request_method,
+            'Content-Type': u'application/json',
+        },
+    )
+    assert resp2.status_code == 200, resp2.get_data(as_text=True)
+    assert resp2.headers['Access-Control-Allow-Origin'] == origin
+    assert allow_methods == split(
+        resp2.headers['Access-Control-Allow-Methods']
+    )
+    assert 'origin' in split(resp2.headers['Vary'], lower=True)
+
+    resp3 = client.options(url, headers={
+        'Origin': u'https://disallowed.com',
+        'Access-Control-Request-Method': request_method,
+    })
+    assert resp3.status_code == 200
+    allow_origin = resp3.headers.get('Access-Control-Allow-Origin', u'')
+    assert u'disallowed.com' not in allow_origin

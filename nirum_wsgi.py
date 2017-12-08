@@ -22,8 +22,32 @@ from werkzeug.serving import run_simple
 from werkzeug.wrappers import Request, Response
 
 __version__ = '0.2.0'
-__all__ = ('AnnotationError', 'InvalidJsonError', 'ServiceMethodError',
-           'WsgiApp')
+__all__ = ('AnnotationError', 'InvalidJsonError', 'MethodDispatch',
+           'PathMatch', 'ServiceMethodError', 'WsgiApp')
+MethodDispatch = collections.namedtuple('MethodDispatch', [
+    'request', 'routed', 'service_method',
+    'payload', 'cors_headers'
+])
+PathMatch = collections.namedtuple('PathMatch', [
+    'match_group', 'verb', 'method_name'
+])
+
+
+def match_request(rules, path_info, request_method):
+    matched_verb = []
+    match = None
+    for _, pattern, verb, method_name in rules:
+        if isinstance(path_info, bytes):
+            # FIXME Decode properly; URI is not unicode
+            path_info = path_info.decode()
+        path_matched = pattern.match(path_info)
+        verb = verb.upper()
+        if path_matched:
+            matched_verb.append(verb)
+            if request_method == verb or request_method == 'OPTIONS':
+                match = PathMatch(match_group=path_matched, verb=verb,
+                                  method_name=method_name)
+    return match, matched_verb
 
 
 def parse_json_payload(request):
@@ -49,6 +73,17 @@ class AnnotationError(ValueError):
 
 class ServiceMethodError(LookupError):
     """Exception raised when a method is not found."""
+
+
+class MethodDispatchError(ValueError):
+    """Exception raised when failed to dispatch method."""
+
+    def __init__(self, request, status_code, message=None,
+                 *args, **kwargs):
+        self.request = request
+        self.status_code = status_code
+        self.message = message
+        super(MethodDispatchError, self).__init__(*args, **kwargs)
 
 
 class WsgiApp:
@@ -137,6 +172,84 @@ class WsgiApp:
         """
         return self.route(environ, start_response)
 
+    def dispatch_method(self, environ):
+        payload = None
+        request = Request(environ)
+        service_methods = self.service.__nirum_service_methods__
+        # CORS
+        cors_headers = [('Vary', 'Origin')]
+        request_match, matched_verb = match_request(
+            self.rules, request.path, request.method
+        )
+        if request_match:
+            service_method = request_match.method_name
+            cors_headers.append(
+                (
+                    'Access-Control-Allow-Methods',
+                    ', '.join(matched_verb + ['OPTIONS'])
+                )
+            )
+            method_parameters = {
+                k: v
+                for k, v in service_methods[request_match.method_name].items()
+                if not k.startswith('_')
+            }
+            payload = {
+                p: request_match.match_group.group(p)
+                for p in method_parameters
+            }
+            # TODO Parsing query string
+            if request_match.verb not in ('GET', 'DELETE'):
+                try:
+                    json_payload = parse_json_payload(request)
+                except InvalidJsonError as e:
+                    raise MethodDispatchError(
+                        request, 400,
+                        "Invalid JSON payload: '{!s}'.".format(e)
+                    )
+                else:
+                    payload.update(**json_payload)
+        else:
+            if request.method not in ('POST', 'OPTIONS'):
+                raise MethodDispatchError(request, 405)
+            cors_headers.append(
+                ('Access-Control-Allow-Methods', 'POST, OPTIONS')
+            )
+            service_method = request.args.get('method')
+            try:
+                payload = parse_json_payload(request)
+            except InvalidJsonError as e:
+                raise MethodDispatchError(
+                    request,
+                    400,
+                    "Invalid JSON payload: '{!s}'.".format(e)
+                )
+        if self.allowed_headers:
+            cors_headers.append(
+                (
+                    'Access-Control-Allow-Headers',
+                    ', '.join(sorted(self.allowed_headers))
+                )
+            )
+        try:
+            origin = request.headers['Origin']
+        except KeyError:
+            pass
+        else:
+            parsed_origin = urlparse.urlparse(origin)
+            if parsed_origin.scheme in ('http', 'https') and \
+               parsed_origin.hostname in self.allowed_origins:
+                cors_headers.append(
+                    ('Access-Control-Allow-Origin', origin)
+                )
+        return MethodDispatch(
+            request=request,
+            routed=bool(request_match),
+            service_method=service_method,
+            payload=payload,
+            cors_headers=cors_headers
+        )
+
     def route(self, environ, start_response):
         """Route
 
@@ -144,99 +257,39 @@ class WsgiApp:
         :param start_response:
 
         """
-        request = Request(environ)
-        service_methods = self.service.__nirum_service_methods__
-        error_raised = None
-        for _, pattern, verb, method_name in self.rules:
-            path_info = environ['PATH_INFO']
-            if isinstance(path_info, bytes):
-                # FIXME Decode properly; URI is not unicode
-                path_info = path_info.decode()
-            match = pattern.match(path_info)
-            if match and environ['REQUEST_METHOD'] == verb.upper():
-                routed = True
-                service_method = method_name
-                if verb in ('GET', 'DELETE'):
-                    method_parameters = {
-                        k: v
-                        for k, v in service_methods[method_name].items()
-                        if not k.startswith('_')
-                    }
-                    # TODO Parsing query string
-                    payload = {p: match.group(p) for p in method_parameters}
-                else:
-                    try:
-                        payload = parse_json_payload(request)
-                    except InvalidJsonError as e:
-                        error_raised = self.error(
-                            400, request,
-                            message="Invalid JSON payload: '{!s}'.".format(e)
-                        )
-                cors_headers = []  # TODO
-                break
+        try:
+            match = self.dispatch_method(environ)
+        except MethodDispatchError as e:
+            response = self.error(e.status_code, e.request, e.message)
         else:
-            routed = False
-            if request.method not in ('POST', 'OPTIONS'):
-                error_raised = self.error(405, request)
-
-            # CORS
-            cors_headers = [
-                ('Access-Control-Allow-Methods', 'POST, OPTIONS'),
-                ('Vary', 'Origin'),
-            ]
-            if self.allowed_headers:
-                cors_headers.append(
-                    (
-                        'Access-Control-Allow-Headers',
-                        ', '.join(sorted(self.allowed_headers))
-                    )
-                )
-            try:
-                origin = request.headers['Origin']
-            except KeyError:
-                pass
-            else:
-                parsed_origin = urlparse.urlparse(origin)
-                if parsed_origin.scheme in ('http', 'https') and \
-                   parsed_origin.hostname in self.allowed_origins:
-                    cors_headers.append(
-                        ('Access-Control-Allow-Origin', origin)
-                    )
-
-            if request.method == 'OPTIONS':
-                start_response('200 OK', cors_headers)
+            if environ['REQUEST_METHOD'] == 'OPTIONS':
+                start_response('200 OK', match.cors_headers)
                 return []
-            service_method = request.args.get('method')
-            try:
-                payload = parse_json_payload(request)
-            except InvalidJsonError as e:
-                error_raised = self.error(
-                    400, request,
-                    message="Invalid JSON payload: '{!s}'.".format(e)
-                )
-        if error_raised:
-            response = error_raised
-        elif service_method:
-            try:
-                response = self.rpc(request, service_method, payload)
-            except ServiceMethodError:
-                response = self.error(
-                    404 if routed else 400, request,
-                    message='No service method `{}` found.'.format(
-                        service_method
+            if match.service_method:
+                try:
+                    response = self.rpc(
+                        match.request, match.service_method, match.payload
                     )
-                )
+                except ServiceMethodError:
+                    response = self.error(
+                        404 if match.routed else 400,
+                        match.request,
+                        message='No service method `{}` found.'.format(
+                            match.service_method
+                        )
+                    )
+                else:
+                    for k, v in match.cors_headers:
+                        if k in response.headers:
+                            # FIXME: is it proper?
+                            response.headers[k] += ', ' + v
+                        else:
+                            response.headers[k] = v
             else:
-                for k, v in cors_headers:
-                    if k in response.headers:
-                        response.headers[k] += ', ' + v  # FIXME: is it proper?
-                    else:
-                        response.headers[k] = v
-        else:
-            response = self.error(
-                400, request,
-                message="`method` is missing."
-            )
+                response = self.error(
+                    400, match.request,
+                    message="`method` is missing."
+                )
         return response(environ, start_response)
 
     def rpc(self, request, service_method, request_json):
