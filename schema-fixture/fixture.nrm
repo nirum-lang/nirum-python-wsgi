@@ -43,6 +43,15 @@ service satisfied-parameters-service (
     text python-keyword(text from, text to),
 );
 
+service cors-verb-service (
+    @http-resource(method="GET", path="/foo/{foo}/")
+    bool get-foo(text foo),
+    @http-resource(method="PUT", path="/foo/{foo}/")
+    bool update-foo(text foo),
+    @http-resource(method="DELETE", path="/bar/{bar}/")
+    bool delete-bar(text bar),
+);
+
 unboxed token (uuid);
 
 record complex-key-map ({point: point} value);
