@@ -6,6 +6,9 @@ Version 0.2.0
 
 To be released.
 
+- Added method dispatching by querystring pattern
+  e.g., ``@http-resource(method="GET", path="/users?from={from}&to={to}")``.
+  [`#130`__]
 - Added basic method dispatching by path pattern (URI template) through
   ``http-resource`` annotation, e.g.,
   ``@http-resource(method="GET", path="/users/{login}/works/{work-id}/")``.
