@@ -11,7 +11,8 @@ To be released.
   ``@http-resource(method="GET", path="/users/{login}/works/{work-id}/")``.
   [`#130`__]
 - Added ``allowed_origins`` and ``allowed_headers`` options for CORS_ to
-  ``WsgiApp`` constructor.
+  ``WsgiApp`` constructor.  It supports simple wildcard (``*``) pattern syntax
+  as well.
 - Added ``AnnotationError``, ``NoJsonError``, and ``ServiceMethodError``
   exceptions.
 - ``WsgiApp.url_map`` attribute was gone.

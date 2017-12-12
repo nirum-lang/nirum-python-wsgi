@@ -387,6 +387,13 @@ def test_cors():
     assert 'disallowed.com' not in allow_origin
 
 
+@mark.parametrize('origin, disallowed_origin_host', [
+    (u'https://example.com', u'disallowed.com'),
+    (u'https://foobar.prefix.example.com', u'foobar.nonprefix.example.com'),
+    (u'https://foobar.prefix.example.com', u'prefix.example.com'),
+    (u'https://foobar.prefix.example.com', u'foobarprefix.example.com'),
+    (u'https://infix.foobar.example.com', u'disallowed.foobar.example.com'),
+])
 @mark.parametrize(
     'url, allow_methods, request_method',
     [
@@ -395,13 +402,21 @@ def test_cors():
         (u'/bar/abc/', {u'DELETE', u'OPTIONS'}, u'DELETE'),
     ],
 )
-def test_cors_http_resouce(url, allow_methods, request_method):
+def test_cors_http_resouce(origin, disallowed_origin_host,
+                           url, allow_methods, request_method):
     app = WsgiApp(
         CorsVerbServiceImpl(),
-        allowed_origins=frozenset(['example.com'])
+        allowed_origins=frozenset([
+            'example.com',
+            '*.prefix.example.com',
+            'infix.*.example.com',
+        ])
     )
+    assert app.allows_origin(origin)
+    assert not app.allows_origin(u'http://' + disallowed_origin_host)
+    assert not app.allows_origin(u'https://' + disallowed_origin_host)
+
     client = Client(app, Response)
-    origin = u'https://example.com'
     resp = client.options(url, headers={
         'Origin': origin,
         'Access-Control-Request-Method': request_method,
@@ -413,7 +428,7 @@ def test_cors_http_resouce(url, allow_methods, request_method):
     resp2 = getattr(client, request_method.lower())(
         url,
         headers={
-            'Origin': u'https://example.com',
+            'Origin': origin,
             'Access-Control-Request-Method': request_method,
             'Content-Type': u'application/json',
         },
@@ -426,9 +441,9 @@ def test_cors_http_resouce(url, allow_methods, request_method):
     assert 'origin' in split(resp2.headers['Vary'], lower=True)
 
     resp3 = client.options(url, headers={
-        'Origin': u'https://disallowed.com',
+        'Origin': u'https://' + disallowed_origin_host,
         'Access-Control-Request-Method': request_method,
     })
     assert resp3.status_code == 200
     allow_origin = resp3.headers.get('Access-Control-Allow-Origin', u'')
-    assert u'disallowed.com' not in allow_origin
+    assert disallowed_origin_host not in allow_origin

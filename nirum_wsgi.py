@@ -119,7 +119,17 @@ class WsgiApp:
                             repr(allowed_origins))
         self.service = service
         self.allowed_origins = frozenset(d.strip().lower()
-                                         for d in allowed_origins)
+                                         for d in allowed_origins
+                                         if '*' not in d)
+        self.allowed_origin_patterns = frozenset(
+            re.compile(
+                '^' + '(?:[^.]+?)'.join(
+                    map(re.escape, d.strip().lower().split('*'))
+                ) + '$'
+            )
+            for d in allowed_origins
+            if '*' in d
+        )
         self.allowed_headers = frozenset(h.strip().lower()
                                          for h in allowed_headers)
         rules = []
@@ -171,6 +181,18 @@ class WsgiApp:
 
         """
         return self.route(environ, start_response)
+
+    def allows_origin(self, origin):
+        parsed = urlparse.urlparse(origin)
+        if parsed.scheme not in ('http', 'https'):
+            return False
+        host = parsed.hostname
+        if host in self.allowed_origins:
+            return True
+        for pattern in self.allowed_origin_patterns:
+            if pattern.match(host):
+                return True
+        return False
 
     def dispatch_method(self, environ):
         payload = None
@@ -236,9 +258,7 @@ class WsgiApp:
         except KeyError:
             pass
         else:
-            parsed_origin = urlparse.urlparse(origin)
-            if parsed_origin.scheme in ('http', 'https') and \
-               parsed_origin.hostname in self.allowed_origins:
+            if self.allows_origin(origin):
                 cors_headers.append(
                     ('Access-Control-Allow-Origin', origin)
                 )
