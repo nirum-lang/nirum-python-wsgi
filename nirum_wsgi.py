@@ -536,10 +536,11 @@ class UriTemplateMatchResult(object):
         # So we need to remove a trailing underscore from the
         # `variable_name` (if it has one) before looking up match results.
         variable_name = variable_name.rstrip('_')
-        values = []
-        for name, value in self.result:
-            if name == variable_name:
-                values.append(value)
+        values = [
+            value
+            for name, value in self.result
+            if name == variable_name
+        ]
         if values:
             return values if len(values) > 1 else values[0]
         else:
