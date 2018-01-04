@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """:mod:`nirum_wsgi` --- Nirum services as WSGI apps
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
