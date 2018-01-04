@@ -38,6 +38,9 @@ MethodDispatch = collections.namedtuple('MethodDispatch', [
 PathMatch = collections.namedtuple('PathMatch', [
     'match_group', 'verb', 'method_name'
 ])
+UriTemplateRule = collections.namedtuple('UriTemplateRule', [
+    'uri_template', 'matcher', 'verb', 'name'
+])
 
 
 def match_request(rules, request_method, path_info, querystring):
@@ -47,23 +50,23 @@ def match_request(rules, request_method, path_info, querystring):
     matched_verb = []
     match = None
     request_rules = sorted(rules, key=lambda x: x[1].names, reverse=True)
-    for _, matcher, verb, method_name in request_rules:
+    for rule in request_rules:
         if isinstance(path_info, bytes):
             # FIXME Decode properly; URI is not unicode
             path_info = path_info.decode()
-        variable_match = matcher.match_path(path_info)
+        variable_match = rule.matcher.match_path(path_info)
         querystring_match = True
         if querystring:
-            querystring_match = matcher.match_querystring(querystring)
+            querystring_match = rule.matcher.match_querystring(querystring)
             if querystring_match:
                 variable_match.update(querystring_match)
-        verb = verb.upper()
+        verb = rule.verb.upper()
         if variable_match and querystring_match:
             matched_verb.append(verb)
-            if (request_method == verb or request_method == 'OPTIONS') and \
+            if request_method in (rule.verb, 'OPTIONS') and \
                     match is None:
                 match = PathMatch(match_group=variable_match, verb=verb,
-                                  method_name=method_name)
+                                  method_name=rule.name)
     return match, matched_verb
 
 
@@ -181,13 +184,13 @@ class WsgiApp:
                         ', '.join(sorted(unsatisfied_parameters))
                     )
                 )
-            rules.append((
-                uri_template,
-                matcher,
-                http_verb,
-                method_name  # Service method
+            rules.append(UriTemplateRule(
+                uri_template=uri_template,
+                matcher=matcher,
+                verb=http_verb,
+                name=method_name  # Service method
             ))
-        rules.sort(key=lambda rule: rule[0], reverse=True)
+        rules.sort(key=lambda rule: rule.uri_template, reverse=True)
         self.rules = List(rules)
 
     def __call__(self, environ, start_response):
