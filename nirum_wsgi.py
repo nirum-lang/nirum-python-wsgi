@@ -549,7 +549,7 @@ class UriTemplateMatchResult(object):
 
 class UriTemplateMatcher(object):
 
-    VALUE_PATTERN = re.compile('\{([a-zA-Z0-9_-]+)\}')
+    VARIABLE_PATTERN = re.compile(r'\{([a-zA-Z0-9_-]+)\}')
 
     def __init__(self, uri_template):
         if not isinstance(uri_template, text_type):
@@ -579,7 +579,7 @@ class UriTemplateMatcher(object):
     def parse_path_template(self, template):
         result = []
         last_pos = 0
-        for match in self.VALUE_PATTERN.finditer(template):
+        for match in self.VARIABLE_PATTERN.finditer(template):
             variable = self.make_name(match.group(1))
             self.add_variable(variable)
             result.append(re.escape(template[last_pos:match.start()]))
@@ -596,7 +596,7 @@ class UriTemplateMatcher(object):
         if not template:
             return patterns
         qs_pattern = re.compile(
-            '([\w-]+)={}'.format(self.VALUE_PATTERN.pattern)
+            '([\w-]+)={}'.format(self.VARIABLE_PATTERN.pattern)
         )
         for match in qs_pattern.finditer(template):
             self.add_variable(match.group(2))
