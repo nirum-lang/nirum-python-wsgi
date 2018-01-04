@@ -287,10 +287,11 @@ class WsgiApp:
         )
 
     def route(self, environ, start_response):
-        """Route HTTP request to Nirum service method.
+        """Route an HTTP request to a corresponding service method,
+        or respond with an error status code if it found nothing.
 
-        :param environ: WSGI environment value.
-        :param start_response: The function can start HTTP response.
+        :param environ: WSGI environment dictionary.
+        :param start_response: A WSGI `start_response` callable.
 
         """
         try:
@@ -529,10 +530,11 @@ class UriTemplateMatchResult(object):
         )
 
     def get_variable(self, variable_name):
-        # Nirum compiler add ``_`` at the end of python keyword to avoid name
-        # duplication.  e.g. from > from_, int > int_
-        # So you have to remove ``_`` from ``variable_name``
-        # before searching for match results.
+        # Nirum compiler appends an underscore to the end of the given
+        # `variable_name` if it's a reserved keyword by Python
+        # (e.g. `from` → `from_`, `def` → `def_`).
+        # So we need to remove a trailing underscore from the
+        # `variable_name` (if it has one) before looking up match results.
         variable_name = variable_name.rstrip('_')
         values = []
         for name, value in self.result:
