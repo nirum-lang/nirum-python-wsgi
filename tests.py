@@ -1,16 +1,20 @@
 import collections
 import json
+import typing
 
 from fixture import (BadRequest, CorsVerbService, MusicService,
                      SatisfiedParametersService,
+                     StatisticsService,
                      Unknown, UnsatisfiedParametersService)
+from nirum.deserialize import deserialize_meta
 from pytest import fixture, mark, raises
 from six import text_type
+from six.moves import urllib
 from werkzeug.test import Client
 from werkzeug.wrappers import Response
 
-from nirum_wsgi import (AnnotationError, WsgiApp,
-                        compile_uri_template, import_string)
+from nirum_wsgi import (AnnotationError, UriTemplateMatcher, WsgiApp,
+                        import_string)
 
 
 class MusicServiceImpl(MusicService):
@@ -51,6 +55,15 @@ class CorsVerbServiceImpl(CorsVerbService):
 
     def delete_bar(self, bar):
         return True
+
+
+class StatisticsServiceImpl(StatisticsService):
+
+    def purchase_count(self, from_, to):
+        return list(range((to - from_).days))
+
+    def purchase_interval(self, from_, to, interval):
+        return list(range(int(interval)))
 
 
 @fixture
@@ -284,20 +297,41 @@ def test_wsgi_app_make_response_arity_check(arity):
         ['/lorem/ipsum', '/prefix/foo/bar', '/foo/bar/postfix'],
     ),
 ])
-def test_compile_uri_template(uri_template, pattern, variables, valid,
+def test_uri_template_matcher(uri_template, pattern, variables, valid,
                               invalid):
-    p, compiled_variables = compile_uri_template(uri_template)
-    assert compiled_variables == variables
-    assert p.pattern == pattern
+    matcher = UriTemplateMatcher(uri_template)
+    assert matcher.names == variables
+    assert matcher.path_pattern.pattern == pattern
     for v in valid:
-        assert p.match(v), v
+        assert matcher.path_pattern.match(v), v
+        assert matcher.match_path(v), v
     for v in invalid:
-        assert not p.match(v), v
+        assert not matcher.path_pattern.match(v), v
+        assert not matcher.match_path(v), v
 
 
-def test_compile_uri_template_duplicate_variable_error():
+@mark.parametrize('uri_template, variables, valid, invalid', [
+    (
+        u'/foo/?from={from}&to={to}',
+        {'from', 'to'},
+        ['/foo/?from=1&to=2', '/foo/?to=2&from=1'],
+        ['/foo/?from=1', '/foo/?to=2'],
+    ),
+])
+def test_uri_template_matcher_querystring(
+    uri_template, variables, valid, invalid
+):
+    matcher = UriTemplateMatcher(uri_template)
+    assert matcher.names == variables
+    for v in valid:
+        assert matcher.match_querystring(v), v
+    for v in invalid:
+        assert not matcher.match_querystring(v), v
+
+
+def test_uri_template_matcher_duplicate_variable_error():
     with raises(AnnotationError):
-        compile_uri_template(u'/foo/{var}/bar/{var}')
+        UriTemplateMatcher(u'/foo/{var}/bar/{var}')
 
 
 def test_import_string():
@@ -447,3 +481,41 @@ def test_cors_http_resouce(origin, disallowed_origin_host,
     assert resp3.status_code == 200
     allow_origin = resp3.headers.get('Access-Control-Allow-Origin', u'')
     assert disallowed_origin_host not in allow_origin
+
+
+@mark.parametrize('qs, expected', [
+    ([('from', '2017-01-01'), ('to', '2017-01-30')], list(range(29))),
+    ([('to', '2017-01-30'), ('from', '2017-01-01')], list(range(29))),
+    # Ignore unused argument.
+    (
+        [('to', '2017-01-30'), ('from', '2017-01-01'), ('x', 1)],
+        list(range(29))
+    ),
+    # Match with `purchase-interval`
+    (
+        [('to', '2017-01-30'), ('from', '2017-01-01'), ('interval', 10)],
+        list(range(10))
+    ),
+    # Match with `purchase-interval` ignore unused argument.
+    (
+        [
+            ('to', '2017-01-30'),
+            ('from', '2017-01-01'),
+            ('interval', 10), ('x', 1)
+        ],
+        list(range(10))
+    ),
+])
+def test_resolve_querystring(qs, expected):
+    app = WsgiApp(
+        StatisticsServiceImpl(),
+        allowed_origins=frozenset(['example.com'])
+    )
+    client = Client(app, Response)
+    url = '/statistics/purchases/?' + urllib.parse.urlencode(qs)
+    response = client.get(url)
+    assert response.status_code == 200, response.get_data(as_text=True)
+    return_result = deserialize_meta(
+        typing.Sequence[int], json.loads(response.get_data(as_text=True))
+    )
+    assert return_result == expected

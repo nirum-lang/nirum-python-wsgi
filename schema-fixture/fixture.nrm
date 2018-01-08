@@ -52,6 +52,20 @@ service cors-verb-service (
     bool delete-bar(text bar),
 );
 
+service statistics-service (
+    @http-resource(
+        method="GET",
+        path="/statistics/purchases/?from={from}&to={to}"
+    )
+    [int64] purchase-count (date from, date to),
+
+    @http-resource(
+        method="GET",
+        path="/statistics/purchases/?from={from}&to={to}&interval={interval}"
+    )
+    [int64] purchase-interval (date from, date to, bigint interval),
+);
+
 unboxed token (uuid);
 
 record complex-key-map ({point: point} value);

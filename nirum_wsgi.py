@@ -1,9 +1,11 @@
+# -*- coding: utf-8 -*-
 """:mod:`nirum_wsgi` --- Nirum services as WSGI apps
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 """
 import argparse
 import collections
+import itertools
 import json
 import re
 import typing
@@ -22,8 +24,14 @@ from werkzeug.serving import run_simple
 from werkzeug.wrappers import Request, Response
 
 __version__ = '0.2.0'
-__all__ = ('AnnotationError', 'InvalidJsonError', 'MethodDispatch',
-           'PathMatch', 'ServiceMethodError', 'WsgiApp')
+__all__ = (
+    'AnnotationError', 'InvalidJsonError',
+    'MethodDispatch', 'MethodDispatchError',
+    'PathMatch', 'ServiceMethodError',
+    'UriTemplateMatchResult', 'UriTemplateMatcher',
+    'WsgiApp',
+    'match_request', 'parse_json_payload',
+)
 MethodDispatch = collections.namedtuple('MethodDispatch', [
     'request', 'routed', 'service_method',
     'payload', 'cors_headers'
@@ -31,22 +39,35 @@ MethodDispatch = collections.namedtuple('MethodDispatch', [
 PathMatch = collections.namedtuple('PathMatch', [
     'match_group', 'verb', 'method_name'
 ])
+UriTemplateRule = collections.namedtuple('UriTemplateRule', [
+    'uri_template', 'matcher', 'verb', 'name'
+])
 
 
-def match_request(rules, path_info, request_method):
+def match_request(rules, request_method, path_info, querystring):
+    # Ignore root path.
+    if path_info == '/':
+        return None, None
     matched_verb = []
     match = None
-    for _, pattern, verb, method_name in rules:
+    request_rules = sorted(rules, key=lambda x: x[1].names, reverse=True)
+    for rule in request_rules:
         if isinstance(path_info, bytes):
             # FIXME Decode properly; URI is not unicode
             path_info = path_info.decode()
-        path_matched = pattern.match(path_info)
-        verb = verb.upper()
-        if path_matched:
+        variable_match = rule.matcher.match_path(path_info)
+        querystring_match = True
+        if querystring:
+            querystring_match = rule.matcher.match_querystring(querystring)
+            if querystring_match:
+                variable_match.update(querystring_match)
+        verb = rule.verb.upper()
+        if variable_match and querystring_match:
             matched_verb.append(verb)
-            if request_method == verb or request_method == 'OPTIONS':
-                match = PathMatch(match_group=path_matched, verb=verb,
-                                  method_name=method_name)
+            if request_method in (rule.verb, 'OPTIONS') and \
+                    match is None:
+                match = PathMatch(match_group=variable_match, verb=verb,
+                                  method_name=rule.name)
     return match, matched_verb
 
 
@@ -147,7 +168,7 @@ class WsgiApp:
                 )
             try:
                 uri_template = params['path']
-                path_pattern, variables = compile_uri_template(uri_template)
+                matcher = UriTemplateMatcher(uri_template)
                 http_verb = params['method']
             except KeyError as e:
                 raise AnnotationError('missing annotation parameter: ' +
@@ -155,7 +176,7 @@ class WsgiApp:
             parameters = frozenset(
                 service_methods[method_name]['_names'].values()
             )
-            unsatisfied_parameters = parameters - variables
+            unsatisfied_parameters = parameters - matcher.names
             if unsatisfied_parameters:
                 raise AnnotationError(
                     '"{0}" does not fully satisfy all parameters of {1}() '
@@ -164,22 +185,17 @@ class WsgiApp:
                         ', '.join(sorted(unsatisfied_parameters))
                     )
                 )
-            rules.append((
-                uri_template,
-                path_pattern,
-                http_verb,
-                method_name  # Service method
+            rules.append(UriTemplateRule(
+                uri_template=uri_template,
+                matcher=matcher,
+                verb=http_verb,
+                name=method_name  # Service method
             ))
-        rules.sort(key=lambda rule: rule[0], reverse=True)
+        rules.sort(key=lambda rule: rule.uri_template, reverse=True)
         self.rules = List(rules)
 
     def __call__(self, environ, start_response):
-        """
-
-        :param environ:
-        :param start_response:
-
-        """
+        """WSGI interface has to be callable."""
         return self.route(environ, start_response)
 
     def allows_origin(self, origin):
@@ -201,7 +217,8 @@ class WsgiApp:
         # CORS
         cors_headers = [('Vary', 'Origin')]
         request_match, matched_verb = match_request(
-            self.rules, request.path, request.method
+            self.rules, environ['REQUEST_METHOD'],
+            environ['PATH_INFO'], environ['QUERY_STRING']
         )
         if request_match:
             service_method = request_match.method_name
@@ -217,7 +234,7 @@ class WsgiApp:
                 if not k.startswith('_')
             }
             payload = {
-                p: request_match.match_group.group(p)
+                p.rstrip('_'): request_match.match_group.get_variable(p)
                 for p in method_parameters
             }
             # TODO Parsing query string
@@ -271,10 +288,11 @@ class WsgiApp:
         )
 
     def route(self, environ, start_response):
-        """Route
+        """Route an HTTP request to a corresponding service method,
+        or respond with an error status code if it found nothing.
 
-        :param environ:
-        :param start_response:
+        :param environ: WSGI environment dictionary.
+        :param start_response: A WSGI `start_response` callable.
 
         """
         try:
@@ -494,28 +512,125 @@ class WsgiApp:
         return Response(content, status_code, headers, **kwargs)
 
 
-def compile_uri_template(template):
-    if not isinstance(template, text_type):
-        raise TypeError('template must be a Unicode string, not ' +
-                        repr(template))
-    value_pattern = re.compile('\{([a-zA-Z0-9_-]+)\}')
-    result = []
-    variables = set()
-    last_pos = 0
-    for match in value_pattern.finditer(template):
-        variable = match.group(1).replace(u'-', u'_')
-        result.append(re.escape(template[last_pos:match.start()]))
-        result.append(u'(?P<')
-        result.append(variable)
-        result.append(u'>.+?)')
-        last_pos = match.end()
-        if variable in variables:
+class UriTemplateMatchResult(object):
+
+    def __init__(self, result):
+        if result is not None:
+            self.result = List(result)
+        else:
+            self.result = None
+
+    def __bool__(self):
+        return self.result is not None
+
+    __nonzero__ = __bool__
+
+    def update(self, match_result):
+        self.result = List(
+            itertools.chain(self.result, match_result.result)
+        )
+
+    def get_variable(self, variable_name):
+        # Nirum compiler appends an underscore to the end of the given
+        # `variable_name` if it's a reserved keyword by Python
+        # (e.g. `from` → `from_`, `def` → `def_`).
+        # So we need to remove a trailing underscore from the
+        # `variable_name` (if it has one) before looking up match results.
+        variable_name = variable_name.rstrip('_')
+        values = [
+            value
+            for name, value in self.result
+            if name == variable_name
+        ]
+        if values:
+            return values if len(values) > 1 else values[0]
+        else:
+            return None
+
+
+class UriTemplateMatcher(object):
+
+    VARIABLE_PATTERN = re.compile(r'\{([a-zA-Z0-9_-]+)\}')
+
+    def __init__(self, uri_template):
+        if not isinstance(uri_template, text_type):
+            raise TypeError('template must be a Unicode string, not ' +
+                            repr(uri_template))
+        if '?' in uri_template:
+            path_template, querystring_template = uri_template.split('?')
+        else:
+            path_template = uri_template
+            querystring_template = None
+        self._names = []
+        self.path_pattern = self.parse_path_template(path_template)
+        self.querystring_pattern = self.parse_querystring_template(
+            querystring_template
+        )
+
+    @property
+    def names(self):
+        return frozenset(self._names)
+
+    def add_variable(self, name):
+        if name in self.names:
             raise AnnotationError('every variable must not be duplicated: ' +
-                                  variable)
-        variables.add(variable)
-    result.append(re.escape(template[last_pos:]))
-    result.append(u'$')
-    return re.compile(u''.join(result)), variables
+                                  name)
+        self._names.append(name)
+
+    def parse_path_template(self, template):
+        result = []
+        last_pos = 0
+        for match in self.VARIABLE_PATTERN.finditer(template):
+            variable = self.make_name(match.group(1))
+            self.add_variable(variable)
+            result.append(re.escape(template[last_pos:match.start()]))
+            result.append(u'(?P<')
+            result.append(variable)
+            result.append(u'>.+?)')
+            last_pos = match.end()
+        result.append(re.escape(template[last_pos:]))
+        result.append(u'$')
+        return re.compile(u''.join(result))
+
+    def parse_querystring_template(self, template):
+        patterns = []
+        if not template:
+            return patterns
+        qs_pattern = re.compile(
+            '([\w-]+)={}'.format(self.VARIABLE_PATTERN.pattern)
+        )
+        for match in qs_pattern.finditer(template):
+            self.add_variable(match.group(2))
+            pattern = re.compile(
+                '{0}=(?P<{1}>[^&]+)&?'.format(re.escape(match.group(1)),
+                                              match.group(2))
+            )
+            patterns.append(pattern)
+        return patterns
+
+    def make_name(self, name):
+        return name.replace(u'-', u'_')
+
+    def match_path(self, path):
+        match = self.path_pattern.match(path)
+        r = None
+        if match:
+            r = []
+            if self.names:
+                for name in self.names & set(match.groupdict().keys()):
+                    r.append((name, match.group(name)))
+        return UriTemplateMatchResult(r)
+
+    def match_querystring(self, querystring):
+        variables = []
+        match_result = None
+        for pattern in self.querystring_pattern:
+            for match in pattern.finditer(querystring):
+                for name in self.names & set(match.groupdict().keys()):
+                    variables.append((name, match.group(name)))
+        if len(set(n for n, _ in variables)) == len(self.querystring_pattern):
+            match_result = UriTemplateMatchResult(variables)
+        return match_result
 
 
 IMPORT_RE = re.compile(
