@@ -64,6 +64,12 @@ service statistics-service (
         path="/statistics/purchases/?from={from}&to={to}&interval={interval}"
     )
     [int64] purchase-interval (date from, date to, bigint interval),
+
+    @http-resource(
+        method="GET",
+        path="/statistics/daily-purchases/?ez={exclude}"
+    )
+    [int64] daily-purchase (bool? exclude),
 );
 
 unboxed token (uuid);

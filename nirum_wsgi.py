@@ -10,6 +10,7 @@ import json
 import re
 import typing
 
+from nirum._compat import is_union_type
 from nirum.datastructures import List
 from nirum.deserialize import deserialize_meta
 from nirum.exc import (NirumProcedureArgumentRequiredError,
@@ -42,6 +43,17 @@ PathMatch = collections.namedtuple('PathMatch', [
 UriTemplateRule = collections.namedtuple('UriTemplateRule', [
     'uri_template', 'matcher', 'verb', 'name'
 ])
+
+
+def _get_argument_value(payload, key, type_):
+    # if is_union_type(type_) is true, type_ is optional type.
+    # https://github.com/spoqa/nirum-python/blob/maintenance-0.6/nirum/deserialize.py#L209
+    if key in payload or is_union_type(type_):
+        return payload.get(key)
+    else:
+        raise NirumProcedureArgumentRequiredError(
+            "A argument named '{}' is missing, it is required.".format(key)
+        )
 
 
 def match_request(rules, request_method, path_info, querystring):
@@ -395,14 +407,7 @@ class WsgiApp:
             if version >= 2:
                 type_ = type_()
             behind_name = name_map[argument_name]
-            try:
-                data = request_json[behind_name]
-            except KeyError:
-                raise NirumProcedureArgumentRequiredError(
-                    "A argument named '{}' is missing, it is required.".format(
-                        behind_name
-                    )
-                )
+            data = _get_argument_value(request_json, behind_name, type_=type_)
             try:
                 arguments[argument_name] = deserialize_meta(type_, data)
             except ValueError:
