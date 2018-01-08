@@ -8,11 +8,11 @@ To be released.
 
 - Added method dispatching by querystring pattern
   e.g., ``@http-resource(method="GET", path="/users?from={from}&to={to}")``.
-  [`#130`__]
+  [`#130`_]
 - Added basic method dispatching by path pattern (URI template) through
   ``http-resource`` annotation, e.g.,
   ``@http-resource(method="GET", path="/users/{login}/works/{work-id}/")``.
-  [`#130`__]
+  [`#130`_]
 - Added ``allowed_origins`` and ``allowed_headers`` options for CORS_ to
   ``WsgiApp`` constructor.  It supports simple wildcard (``*``) pattern syntax
   as well.
@@ -21,7 +21,7 @@ To be released.
 - ``WsgiApp.url_map`` attribute was gone.
 - ``/ping/`` resource was gone.
 
-__ https://github.com/spoqa/nirum/issues/130
+.. _#130: https://github.com/spoqa/nirum/issues/130
 .. _CORS: https://www.w3.org/TR/cors/
 
 
