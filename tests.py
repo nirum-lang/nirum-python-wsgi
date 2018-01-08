@@ -65,6 +65,14 @@ class StatisticsServiceImpl(StatisticsService):
     def purchase_interval(self, from_, to, interval):
         return list(range(int(interval)))
 
+    def daily_purchase(self, exclude):
+        if exclude is None:
+            return [1]
+        elif exclude:
+            return [1, 2]
+        else:
+            return [1, 2, 3]
+
 
 @fixture
 def fx_music_wsgi():
@@ -519,3 +527,22 @@ def test_resolve_querystring(qs, expected):
         typing.Sequence[int], json.loads(response.get_data(as_text=True))
     )
     assert return_result == expected
+
+
+@mark.parametrize('payload, expected', [
+    ({'exclude': False}, [1, 2, 3]),
+    ({'exclude': True}, [1, 2]),
+    ({'exclude': None}, [1]),
+    ({}, [1]),
+])
+def test_omit_optional_parameter(payload, expected):
+    app = WsgiApp(StatisticsServiceImpl())
+    client = Client(app, Response)
+    response = client.post(
+        '/?method=daily_purchase',
+        data=json.dumps(payload),
+        content_type='application/json'
+    )
+    assert response.status_code == 200, response.get_data(as_text=True)
+    actual = json.loads(response.get_data(as_text=True))
+    assert actual == expected

@@ -6,6 +6,7 @@ Version 0.2.0
 
 To be released.
 
+- Made parameters having an optional type possible to be omitted. [`#205`_]
 - Added method dispatching by querystring pattern
   e.g., ``@http-resource(method="GET", path="/users?from={from}&to={to}")``.
   [`#130`_]
@@ -21,6 +22,7 @@ To be released.
 - ``WsgiApp.url_map`` attribute was gone.
 - ``/ping/`` resource was gone.
 
+.. _#205: https://github.com/spoqa/nirum/issues/205
 .. _#130: https://github.com/spoqa/nirum/issues/130
 .. _CORS: https://www.w3.org/TR/cors/
 
