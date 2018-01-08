@@ -10,7 +10,7 @@ import json
 import re
 import typing
 
-from nirum._compat import is_union_type
+from nirum._compat import get_union_types, is_union_type
 from nirum.datastructures import List
 from nirum.deserialize import deserialize_meta
 from nirum.exc import (NirumProcedureArgumentRequiredError,
@@ -31,7 +31,7 @@ __all__ = (
     'PathMatch', 'ServiceMethodError',
     'UriTemplateMatchResult', 'UriTemplateMatcher',
     'WsgiApp',
-    'match_request', 'parse_json_payload',
+    'is_optional_type', 'match_request', 'parse_json_payload',
 )
 MethodDispatch = collections.namedtuple('MethodDispatch', [
     'request', 'routed', 'service_method',
@@ -45,10 +45,13 @@ UriTemplateRule = collections.namedtuple('UriTemplateRule', [
 ])
 
 
+def is_optional_type(type_):
+    # it have to be removed after nirum._compat.is_optional_type added.
+    return is_union_type(type_) and type(None) in get_union_types(type_)
+
+
 def _get_argument_value(payload, key, type_):
-    # if is_union_type(type_) is true, type_ is optional type.
-    # https://github.com/spoqa/nirum-python/blob/maintenance-0.6/nirum/deserialize.py#L209
-    if key in payload or is_union_type(type_):
+    if key in payload or is_optional_type(type_):
         return payload.get(key)
     else:
         raise NirumProcedureArgumentRequiredError(
