@@ -387,16 +387,17 @@ class WsgiApp:
         if type_hints.get('_v', 1) >= 2:
             return_type = return_type()
         if not self._check_return_type(return_type, result):
-            return self.error(
-                500,
-                request,
-                message="Incorrect return type '{0}' "
-                        "for '{1}'. expected '{2}'.".format(
-                            typing._type_repr(result.__class__),
-                            service_method,
-                            typing._type_repr(return_type)
-                        )
+            message = '''The return type of the {0}() method is {1}, but its \
+server-side implementation has tried to return a value of an invalid type.  \
+It is an internal server error and should be fixed by server-side.'''.format(
+                service_method.replace('_', '-'),
+                typing._type_repr(return_type),
+                # FIXME: It'd better not show Python name of the return type,
+                # but its IDL behind name instead.  Currently the Nirum
+                # compiler doesn't generate metadata having behind names of
+                # nethod return/parameter types.
             )
+            return self.error(500, request, message=message)
         else:
             return self._raw_response(200, serialize_meta(result))
 

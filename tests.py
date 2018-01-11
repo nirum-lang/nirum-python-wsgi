@@ -8,7 +8,7 @@ from fixture import (BadRequest, CorsVerbService, MusicService,
                      Unknown, UnsatisfiedParametersService)
 from nirum.deserialize import deserialize_meta
 from pytest import fixture, mark, raises
-from six import text_type
+from six import PY2, text_type
 from six.moves import urllib
 from werkzeug.test import Client
 from werkzeug.wrappers import Response
@@ -146,8 +146,10 @@ def test_wsgi_app_error(fx_test_client):
         {
             '_type': 'error',
             '_tag': 'internal_server_error',
-            'message': "Incorrect return type 'int' for 'incorrect_return'. "
-                       "expected '{}'.".format(text_type.__name__)
+            'message': '''The return type of the incorrect-return() method is \
+{0}, but its server-side implementation has tried to return a value of \
+an invalid type.  It is an internal server error and should be fixed by \
+server-side.'''.format('unicode' if PY2 else 'str')
         }
     )
 
