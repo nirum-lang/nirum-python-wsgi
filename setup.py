@@ -41,7 +41,7 @@ def get_version():
 
 setup_requires = []
 install_requires = [
-    'nirum >= 0.6.0',
+    'nirum >= 0.6.1',
     'six',
     'Werkzeug >= 0.11, < 1.0',
 ]
