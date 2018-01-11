@@ -7,6 +7,7 @@ import argparse
 import collections
 import itertools
 import json
+import logging
 import re
 import typing
 
@@ -387,12 +388,24 @@ class WsgiApp:
         if type_hints.get('_v', 1) >= 2:
             return_type = return_type()
         if not self._check_return_type(return_type, result):
+            service_class = type(self.service)
+            logger = logging.getLogger(typing._type_repr(service_class)) \
+                            .getChild(str(method_facial_name))
+            return_type_repr = typing._type_repr(return_type)
+            logger.error(
+                '%r is an invalid return value for the return type (%s) of '
+                '%s.%s() method.',
+                result,
+                return_type_repr,
+                typing._type_repr(service_class),
+                method_facial_name
+            )
             hyphened_service_method = service_method.replace('_', '-')
             message = '''The return type of the {0}() method is {1}, but its \
 server-side implementation has tried to return a value of an invalid type.  \
 It is an internal server error and should be fixed by server-side.'''.format(
                 hyphened_service_method,
-                typing._type_repr(return_type),
+                return_type_repr,
                 # FIXME: It'd better not show Python name of the return type,
                 # but its IDL behind name instead.  Currently the Nirum
                 # compiler doesn't generate metadata having behind names of

@@ -1,9 +1,10 @@
 import collections
 import json
+import logging
 import typing
 
 from fixture import (BadRequest, CorsVerbService, MusicService,
-                     NullDisallowedMethodService,
+                     NullDisallowedMethodService, Point,
                      SatisfiedParametersService,
                      StatisticsService,
                      Unknown, UnsatisfiedParametersService)
@@ -102,7 +103,7 @@ def assert_response(response, status_code, expect_json):
     assert actual_response_json == expect_json
 
 
-def test_wsgi_app_error(fx_test_client):
+def test_wsgi_app_error(caplog, fx_test_client):
     # method not allowed
     assert_response(
         fx_test_client.get('/?method=get_music_by_artist_name'), 405,
@@ -150,8 +151,19 @@ def test_wsgi_app_error(fx_test_client):
         }
     )
     # incorrect return
+    caplog.handler.records = []  # Clear log records
+    response = fx_test_client.post('/?method=incorrect_return')
+    assert caplog.record_tuples and caplog.record_tuples[-1] == (
+        typing._type_repr(MusicServiceImpl) + '.incorrect_return',
+        logging.ERROR,
+        '''1 is an invalid return value for the return type ({0}) of {1}.\
+incorrect_return() method.'''.format(
+            'unicode' if PY2 else 'str',
+            typing._type_repr(MusicServiceImpl)
+        ),
+    )
     assert_response(
-        fx_test_client.post('/?method=incorrect_return'),
+        response,
         500,
         {
             '_type': 'error',
@@ -560,7 +572,7 @@ def test_omit_optional_parameter(payload, expected):
     assert actual == expected
 
 
-def test_readable_error_when_null_returned_from_null_disallowed_method():
+def test_readable_error_when_null_returned_from_null_disallowed_method(caplog):
     """Even if the method implementation returns None (FYI Python functions
     return None when it lacks return statement so that service methods are
     prone to return None by mistake) the error message should be readable
@@ -573,10 +585,22 @@ implementation has tried to return nothing (i.e., null, nil, None).  \
 It is an internal server error and should be fixed by server-side.'''
     app = WsgiApp(NullDisallowedMethodServiceImpl(None))
     client = Client(app, Response)
+    caplog.handler.records = []  # Clear log records
     response = client.post(
         '/?method=null_disallowed_method',
         data=json.dumps({}),
         content_type='application/json'
+    )
+    assert caplog.record_tuples and caplog.record_tuples[-1] == (
+        '{0}.null_disallowed_method'.format(
+            typing._type_repr(NullDisallowedMethodServiceImpl)
+        ),
+        logging.ERROR,
+        '''None is an invalid return value for the return type ({0}) of {1}.\
+null_disallowed_method() method.'''.format(
+            typing._type_repr(Point),
+            typing._type_repr(NullDisallowedMethodServiceImpl)
+        ),
     )
     assert response.status_code == 500, response.get_data(as_text=True)
     actual = json.loads(response.get_data(as_text=True))
