@@ -387,16 +387,22 @@ class WsgiApp:
         if type_hints.get('_v', 1) >= 2:
             return_type = return_type()
         if not self._check_return_type(return_type, result):
+            hyphened_service_method = service_method.replace('_', '-')
             message = '''The return type of the {0}() method is {1}, but its \
 server-side implementation has tried to return a value of an invalid type.  \
 It is an internal server error and should be fixed by server-side.'''.format(
-                service_method.replace('_', '-'),
+                hyphened_service_method,
                 typing._type_repr(return_type),
                 # FIXME: It'd better not show Python name of the return type,
                 # but its IDL behind name instead.  Currently the Nirum
                 # compiler doesn't generate metadata having behind names of
                 # nethod return/parameter types.
             )
+            if result is None:
+                message = '''The return type of {0}() method is not optional \
+(i.e., no trailing question mark), but its server-side implementation has \
+tried to return nothing (i.e., null, nil, None).  It is an internal server \
+error and should be fixed by server-side.'''.format(hyphened_service_method)
             return self.error(500, request, message=message)
         else:
             return self._raw_response(200, serialize_meta(result))
@@ -425,6 +431,9 @@ It is an internal server error and should be fixed by server-side.'''.format(
         return arguments
 
     def _check_return_type(self, type_hint, procedure_result):
+        if procedure_result is None:
+            none_type = type(None)
+            return type_hint is none_type or is_optional_type(type_hint)
         try:
             deserialize_meta(type_hint, serialize_meta(procedure_result))
         except ValueError:

@@ -75,3 +75,8 @@ service statistics-service (
 unboxed token (uuid);
 
 record complex-key-map ({point: point} value);
+
+service null-disallowed-method-service (
+    point null-disallowed-method (),
+    point def (),
+);

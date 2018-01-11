@@ -3,6 +3,7 @@ import json
 import typing
 
 from fixture import (BadRequest, CorsVerbService, MusicService,
+                     NullDisallowedMethodService,
                      SatisfiedParametersService,
                      StatisticsService,
                      Unknown, UnsatisfiedParametersService)
@@ -72,6 +73,15 @@ class StatisticsServiceImpl(StatisticsService):
             return [1, 2]
         else:
             return [1, 2, 3]
+
+
+class NullDisallowedMethodServiceImpl(NullDisallowedMethodService):
+
+    def __init__(self, value):
+        self.value = value
+
+    def null_disallowed_method(self):
+        return self.value
 
 
 @fixture
@@ -548,3 +558,30 @@ def test_omit_optional_parameter(payload, expected):
     assert response.status_code == 200, response.get_data(as_text=True)
     actual = json.loads(response.get_data(as_text=True))
     assert actual == expected
+
+
+def test_readable_error_when_null_returned_from_null_disallowed_method():
+    """Even if the method implementation returns None (FYI Python functions
+    return None when it lacks return statement so that service methods are
+    prone to return None by mistake) the error message should be readable
+    and helpful for debugging.
+
+    """
+    expected_message = '''The return type of null-disallowed-method() method \
+is not optional (i.e., no trailing question mark), but its server-side \
+implementation has tried to return nothing (i.e., null, nil, None).  \
+It is an internal server error and should be fixed by server-side.'''
+    app = WsgiApp(NullDisallowedMethodServiceImpl(None))
+    client = Client(app, Response)
+    response = client.post(
+        '/?method=null_disallowed_method',
+        data=json.dumps({}),
+        content_type='application/json'
+    )
+    assert response.status_code == 500, response.get_data(as_text=True)
+    actual = json.loads(response.get_data(as_text=True))
+    assert actual == {
+        '_type': 'error',
+        '_tag': 'internal_server_error',
+        'message': expected_message,
+    }
