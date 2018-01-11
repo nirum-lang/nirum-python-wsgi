@@ -21,7 +21,7 @@ def readme(name='README.rst'):
 
 def get_version():
     module_path = os.path.join(os.path.dirname(__file__), 'nirum_wsgi.py')
-    module_file = open(module_path)
+    module_file = open(module_path, 'rb')
     try:
         module_code = module_file.read()
     finally:
