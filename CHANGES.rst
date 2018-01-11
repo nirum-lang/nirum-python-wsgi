@@ -19,6 +19,9 @@ To be released.
   as well.
 - Added ``AnnotationError``, ``NoJsonError``, and ``ServiceMethodError``
   exceptions.
+- Since returning a disallowed value which does not match to the return type
+  is the fault the server-side made, the HTTP status code for the case became
+  ``500 Internal Server Error`` instead of ``400 Bad Request``.
 - ``WsgiApp.url_map`` attribute was gone.
 - ``/ping/`` resource was gone.
 

@@ -142,10 +142,10 @@ def test_wsgi_app_error(fx_test_client):
     # incorrect return
     assert_response(
         fx_test_client.post('/?method=incorrect_return'),
-        400,
+        500,
         {
             '_type': 'error',
-            '_tag': 'bad_request',
+            '_tag': 'internal_server_error',
             'message': "Incorrect return type 'int' for 'incorrect_return'. "
                        "expected '{}'.".format(text_type.__name__)
         }

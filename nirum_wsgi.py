@@ -388,7 +388,7 @@ class WsgiApp:
             return_type = return_type()
         if not self._check_return_type(return_type, result):
             return self.error(
-                400,
+                500,
                 request,
                 message="Incorrect return type '{0}' "
                         "for '{1}'. expected '{2}'.".format(
