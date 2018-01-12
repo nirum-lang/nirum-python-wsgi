@@ -21,7 +21,7 @@ def readme(name='README.rst'):
 
 def get_version():
     module_path = os.path.join(os.path.dirname(__file__), 'nirum_wsgi.py')
-    module_file = open(module_path)
+    module_file = open(module_path, 'rb')
     try:
         module_code = module_file.read()
     finally:
@@ -41,14 +41,14 @@ def get_version():
 
 setup_requires = []
 install_requires = [
-    'nirum >= 0.6.0',
+    'nirum >= 0.6.1',
     'six',
     'Werkzeug >= 0.11, < 1.0',
 ]
 tests_require = [
     'flake8-import-order >= 0.12, < 1.0',
     'flake8-import-order-spoqa >= 1.0.0, < 2.0.0',
-    'pytest >= 3.1.2, < 4.0.0',
+    'pytest >= 3.3.2, < 4.0.0',
     'pytest-flake8 >= 0.9.1, < 1.0.0',
     'requests-mock >= 1.3.0, < 1.4.0',
 ]

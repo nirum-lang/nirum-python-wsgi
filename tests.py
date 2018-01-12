@@ -1,14 +1,16 @@
 import collections
 import json
+import logging
 import typing
 
 from fixture import (BadRequest, CorsVerbService, MusicService,
+                     NullDisallowedMethodService, Point,
                      SatisfiedParametersService,
                      StatisticsService,
                      Unknown, UnsatisfiedParametersService)
 from nirum.deserialize import deserialize_meta
 from pytest import fixture, mark, raises
-from six import text_type
+from six import PY2, text_type
 from six.moves import urllib
 from werkzeug.test import Client
 from werkzeug.wrappers import Response
@@ -74,6 +76,15 @@ class StatisticsServiceImpl(StatisticsService):
             return [1, 2, 3]
 
 
+class NullDisallowedMethodServiceImpl(NullDisallowedMethodService):
+
+    def __init__(self, value):
+        self.value = value
+
+    def null_disallowed_method(self):
+        return self.value
+
+
 @fixture
 def fx_music_wsgi():
     return WsgiApp(MusicServiceImpl())
@@ -92,7 +103,7 @@ def assert_response(response, status_code, expect_json):
     assert actual_response_json == expect_json
 
 
-def test_wsgi_app_error(fx_test_client):
+def test_wsgi_app_error(caplog, fx_test_client):
     # method not allowed
     assert_response(
         fx_test_client.get('/?method=get_music_by_artist_name'), 405,
@@ -140,14 +151,27 @@ def test_wsgi_app_error(fx_test_client):
         }
     )
     # incorrect return
+    caplog.handler.records = []  # Clear log records
+    response = fx_test_client.post('/?method=incorrect_return')
+    assert caplog.record_tuples and caplog.record_tuples[-1] == (
+        typing._type_repr(MusicServiceImpl) + '.incorrect_return',
+        logging.ERROR,
+        '''1 is an invalid return value for the return type ({0}) of {1}.\
+incorrect_return() method.'''.format(
+            'unicode' if PY2 else 'str',
+            typing._type_repr(MusicServiceImpl)
+        ),
+    )
     assert_response(
-        fx_test_client.post('/?method=incorrect_return'),
-        400,
+        response,
+        500,
         {
             '_type': 'error',
-            '_tag': 'bad_request',
-            'message': "Incorrect return type 'int' for 'incorrect_return'. "
-                       "expected '{}'.".format(text_type.__name__)
+            '_tag': 'internal_server_error',
+            'message': '''The return type of the incorrect-return() method is \
+{0}, but its server-side implementation has tried to return a value of \
+an invalid type.  It is an internal server error and should be fixed by \
+server-side.'''.format('unicode' if PY2 else 'str')
         }
     )
 
@@ -546,3 +570,42 @@ def test_omit_optional_parameter(payload, expected):
     assert response.status_code == 200, response.get_data(as_text=True)
     actual = json.loads(response.get_data(as_text=True))
     assert actual == expected
+
+
+def test_readable_error_when_null_returned_from_null_disallowed_method(caplog):
+    """Even if the method implementation returns None (FYI Python functions
+    return None when it lacks return statement so that service methods are
+    prone to return None by mistake) the error message should be readable
+    and helpful for debugging.
+
+    """
+    expected_message = '''The return type of null-disallowed-method() method \
+is not optional (i.e., no trailing question mark), but its server-side \
+implementation has tried to return nothing (i.e., null, nil, None).  \
+It is an internal server error and should be fixed by server-side.'''
+    app = WsgiApp(NullDisallowedMethodServiceImpl(None))
+    client = Client(app, Response)
+    caplog.handler.records = []  # Clear log records
+    response = client.post(
+        '/?method=null_disallowed_method',
+        data=json.dumps({}),
+        content_type='application/json'
+    )
+    assert caplog.record_tuples and caplog.record_tuples[-1] == (
+        '{0}.null_disallowed_method'.format(
+            typing._type_repr(NullDisallowedMethodServiceImpl)
+        ),
+        logging.ERROR,
+        '''None is an invalid return value for the return type ({0}) of {1}.\
+null_disallowed_method() method.'''.format(
+            typing._type_repr(Point),
+            typing._type_repr(NullDisallowedMethodServiceImpl)
+        ),
+    )
+    assert response.status_code == 500, response.get_data(as_text=True)
+    actual = json.loads(response.get_data(as_text=True))
+    assert actual == {
+        '_type': 'error',
+        '_tag': 'internal_server_error',
+        'message': expected_message,
+    }
