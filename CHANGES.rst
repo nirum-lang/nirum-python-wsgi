@@ -28,7 +28,7 @@ To be released.
   response instead of uncaught Python exception.
 - ``WsgiApp.url_map`` attribute was gone.
 - ``/ping/`` resource was gone.
-- Fix ``nirum-server`` command able to import a Python module/package from
+- Fixed ``nirum-server`` command able to import a Python module/package from
   the current working directory (``.``; CWD).
 
 .. _#205: https://github.com/spoqa/nirum/issues/205
