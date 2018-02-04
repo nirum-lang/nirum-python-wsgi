@@ -4,7 +4,7 @@ Changelog
 Version 0.2.0
 -------------
 
-To be released.
+Released on February 4, 2018.
 
 - Made parameters having an optional type possible to be omitted. [`#205`_]
 - Added method dispatching by querystring pattern
