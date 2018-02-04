@@ -8,7 +8,9 @@ import collections
 import itertools
 import json
 import logging
+import os
 import re
+import sys
 import typing
 
 from nirum._compat import get_union_types, is_union_type
@@ -707,6 +709,8 @@ def main():
                         action='store_true', default=False)
     parser.add_argument('service', help='Import path to service instance')
     args = parser.parse_args()
+    if not ('.' in sys.path or os.getcwd() in sys.path):
+        sys.path.insert(0, os.getcwd())
     service = import_string(args.service)
     run_simple(
         args.host, args.port, WsgiApp(service),
