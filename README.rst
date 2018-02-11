@@ -14,7 +14,7 @@ Nirum service to a WSGI application:
 
 .. code-block:: python
 
-   from youtservice import YourService
+   from yourservice import YourService
    from nirum_wsgi import WsgiApp
 
    class YourServiceImpl(YourService):
