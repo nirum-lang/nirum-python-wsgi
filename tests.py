@@ -349,6 +349,12 @@ def test_uri_template_matcher(uri_template, pattern, variables, valid,
         ['/foo/?from=1&to=2', '/foo/?to=2&from=1'],
         ['/foo/?from=1', '/foo/?to=2'],
     ),
+    (
+        u'/foo/?start-from={start-from}&end-to={end-to}',
+        {'start_from', 'end_to'},
+        ['/foo?start-from=1&end-to=2', '/foo?end-to=2&start-from=1'],
+        ['/foo?start-from=1', '/foo?end-to=2'],
+    ),
 ])
 def test_uri_template_matcher_querystring(
     uri_template, variables, valid, invalid

@@ -1,14 +1,25 @@
 language: python
 python: [2.7, 3.4, 3.5, 3.6]
+env:
+  global:
+  - FIXTURE_PATH=/tmp/schema_fixture/
+  matrix:
+  - NIRUM_URL=https://github.com/spoqa/nirum/releases/download/0.3.3/nirum-linux-x86_64
+  # - NIRUM_URL=https://nightly-builds.nirum.org/travis-builds/nirum-linux-x86_64
+  # Nightly build is broken as of 2018-03-20
 install:
 - pip install tox-travis
+- ls -al
 - mkdir -p "$HOME/bin"
-- curl -o "$HOME/bin/nirum" https://nightly-builds.nirum.org/travis-builds/nirum-linux-x86_64
+- curl -v -L -o "$HOME/bin/nirum" "$NIRUM_URL"
+- ls -al "$HOME/bin"
 - chmod +x "$HOME/bin/nirum"
+- ls -al "$HOME/bin"
+- nirum --help
 script:
 - tox -e devruntime
-- FIXTURE_PATH=/tmp/schema_fixture/ tox -e buildfixture
-- FIXTURE_PATH=/tmp/schema_fixture/ tox
+- tox -e buildfixture
+- tox
 - tox -e docs
 - '[[ "$TRAVIS_TAG" = "" ]] || [[ "$TRAVIS_TAG" = "$(python setup.py --version)" ]]'
 - |
