@@ -4,7 +4,7 @@ Changelog
 Version 0.2.1
 -------------
 
-To be released.
+Released on March 20, 2018.
 
 - Fixed a runtime ``re.error`` (``sre_constants.error``) that had been raised
   when a variable name for a query string has one or more hyphens
