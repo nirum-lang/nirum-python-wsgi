@@ -6,6 +6,12 @@ Version 0.2.2
 
 To be released.
 
+- Fixed a runtime ``TypeError`` that had been raised when a parameter
+  corresponding to a variable for a query string in ``@http-resource``
+  annotation's path has an optional type.  [`#251` by Chang-soo Han]
+
+.. _#251: https://github.com/spoqa/nirum/issues/251
+
 
 Version 0.2.1
 -------------

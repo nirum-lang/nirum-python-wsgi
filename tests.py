@@ -15,7 +15,8 @@ from six.moves import urllib
 from werkzeug.test import Client
 from werkzeug.wrappers import Response
 
-from nirum_wsgi import (AnnotationError, UriTemplateMatcher, WsgiApp,
+from nirum_wsgi import (AnnotationError,
+                        UriTemplateMatchResult, UriTemplateMatcher, WsgiApp,
                         import_string)
 
 
@@ -370,6 +371,23 @@ def test_uri_template_matcher_querystring(
 def test_uri_template_matcher_duplicate_variable_error():
     with raises(AnnotationError):
         UriTemplateMatcher(u'/foo/{var}/bar/{var}')
+
+
+@mark.parametrize('lval, rval, expected', [
+    (None, [('n1', 'v1'), ('n2', 'v2')], [('n1', 'v1'), ('n2', 'v2')]),
+    ([('n1', 'v1'), ('n2', 'v2')], None, [('n1', 'v1'), ('n2', 'v2')]),
+    ([('n1', 'v1'), ('n2', 'v2')], [('n1', 'v3'), ('n2', 'v4')],
+     [('n1', 'v1'), ('n2', 'v2'), ('n1', 'v3'), ('n2', 'v4')]),
+    (None, None, None),
+])
+def test_uri_template_match_result_update(lval, rval, expected):
+    lval_result = UriTemplateMatchResult(lval)
+    rval_result = UriTemplateMatchResult(rval)
+    lval_result.update(rval_result)
+    if expected is None:
+        assert lval is None
+    else:
+        assert list(lval_result.result) == expected
 
 
 def test_import_string():
