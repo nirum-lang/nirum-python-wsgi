@@ -559,9 +559,10 @@ class UriTemplateMatchResult(object):
     __nonzero__ = __bool__
 
     def update(self, match_result):
-        self.result = List(
-            itertools.chain(self.result, match_result.result)
-        )
+        if self.result or match_result:
+            self.result = List(
+                itertools.chain(self.result or [], match_result.result or [])
+            )
 
     def get_variable(self, variable_name):
         # Nirum compiler appends an underscore to the end of the given
