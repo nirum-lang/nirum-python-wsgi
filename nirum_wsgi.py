@@ -633,10 +633,11 @@ class UriTemplateMatcher(object):
             '([\w-]+)={}'.format(self.VARIABLE_PATTERN.pattern)
         )
         for match in qs_pattern.finditer(template):
-            self.add_variable(match.group(2))
+            variable = self.make_name(match.group(2))
+            self.add_variable(variable)
             pattern = re.compile(
                 '{0}=(?P<{1}>[^&]+)&?'.format(re.escape(match.group(1)),
-                                              match.group(2))
+                                              variable)
             )
             patterns.append(pattern)
         return patterns

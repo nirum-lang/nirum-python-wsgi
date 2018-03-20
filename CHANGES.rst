@@ -7,6 +7,18 @@ Version 0.3.0
 To be released.
 
 
+Version 0.2.1
+-------------
+
+Released on March 20, 2018.
+
+- Fixed a runtime ``re.error`` (``sre_constants.error``) that had been raised
+  when a variable name for a query string has one or more hyphens
+  in ``@http-resource`` annotation's ``path``.  [`#250`_ by Chang-soo Han]
+
+.. _#250: https://github.com/spoqa/nirum/issues/250
+
+
 Version 0.2.0
 -------------
 
