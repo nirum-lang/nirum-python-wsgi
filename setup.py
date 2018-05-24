@@ -41,16 +41,17 @@ def get_version():
 
 setup_requires = []
 install_requires = [
-    'nirum >= 0.6.1',
+    'nirum >= 0.6.3',
     'six',
     'Werkzeug >= 0.11, < 1.0',
 ]
 tests_require = [
-    'flake8-import-order >= 0.12, < 1.0',
-    'flake8-import-order-spoqa >= 1.0.0, < 2.0.0',
-    'pytest >= 3.3.2, < 4.0.0',
-    'pytest-flake8 >= 0.9.1, < 1.0.0',
-    'requests-mock >= 1.3.0, < 1.4.0',
+    'flake8-import-order >= 0.17.1, < 1.0',
+    'flake8-import-order-spoqa >= 1.4.0, < 2.0.0',
+    'pycodestyle < 2.4.0',  # FIXME: remove pinning when new flake8 is released
+    'pytest >= 3.5.1, < 4.0.0',
+    'pytest-flake8 >= 1.0.1, < 1.1.0',
+    'requests-mock >= 1.5.0, < 1.6.0',
 ]
 extras_require = {
     'tests': tests_require,

@@ -4,20 +4,22 @@ import logging
 import typing
 
 from fixture import (BadRequest, CorsVerbService, MusicService,
-                     NullDisallowedMethodService, Point,
+                     NullDisallowedMethodService,
                      SatisfiedParametersService,
                      StatisticsService,
                      Unknown, UnsatisfiedParametersService)
 from nirum.deserialize import deserialize_meta
 from pytest import fixture, mark, raises
-from six import PY2, text_type
 from six.moves import urllib
 from werkzeug.test import Client
 from werkzeug.wrappers import Response
 
-from nirum_wsgi import (AnnotationError,
+from nirum_wsgi import (AnnotationError, LegacyWsgiApp, MethodArgumentError,
                         UriTemplateMatchResult, UriTemplateMatcher, WsgiApp,
                         import_string)
+
+
+LEGACY = hasattr(MusicService, '__nirum_schema_version__')
 
 
 class MusicServiceImpl(MusicService):
@@ -157,9 +159,8 @@ def test_wsgi_app_error(caplog, fx_test_client):
     assert caplog.record_tuples and caplog.record_tuples[-1] == (
         typing._type_repr(MusicServiceImpl) + '.incorrect_return',
         logging.ERROR,
-        '''1 is an invalid return value for the return type ({0}) of {1}.\
+        '''1 is an invalid return value for the return type of {0}.\
 incorrect_return() method.'''.format(
-            'unicode' if PY2 else 'str',
             typing._type_repr(MusicServiceImpl)
         ),
     )
@@ -169,10 +170,9 @@ incorrect_return() method.'''.format(
         {
             '_type': 'error',
             '_tag': 'internal_server_error',
-            'message': '''The return type of the incorrect-return() method is \
-{0}, but its server-side implementation has tried to return a value of \
-an invalid type.  It is an internal server error and should be fixed by \
-server-side.'''.format('unicode' if PY2 else 'str')
+            'message': '''The server-side implementation of the \
+incorrect-return() method has tried to return a value of an invalid type.  \
+It is an internal server error and should be fixed by server-side.''',
         }
     )
 
@@ -184,8 +184,10 @@ def test_procedure_bad_request(fx_test_client):
         {
             '_type': 'error',
             '_tag': 'bad_request',
-            'message': "A argument named 'artist_name' is missing, "
-                       "it is required.",
+            'message': 'There are invalid arguments.',
+            'errors': [
+                {'path': '.artist_name', 'message': 'Expected to exist.'},
+            ],
         }
     )
     payload = {
@@ -201,8 +203,19 @@ def test_procedure_bad_request(fx_test_client):
         {
             '_type': 'error',
             '_tag': 'bad_request',
-            'message': "Incorrect type 'int' for 'artist_name'. "
-                       "expected '{}'.".format(text_type.__name__)
+            'message': 'There are invalid arguments.',
+            'errors': [
+                {
+                    'path': '.artist_name',
+                    'message': (
+                        'Expected {0}, but int was given.'.format(
+                            type(u'').__name__
+                        )
+                        if LEGACY
+                        else 'Expected a string.'
+                    )
+                },
+            ],
         }
     )
 
@@ -264,8 +277,10 @@ def test_wsgi_app_with_behind_name(fx_test_client):
         {
             '_type': 'error',
             '_tag': 'bad_request',
-            'message': "A argument named 'norae' is missing, "
-                       "it is required.",
+            'message': 'There are invalid arguments.',
+            'errors': [
+                {'path': '.norae', 'message': 'Expected to exist.'},
+            ],
         }
     )
     assert_response(
@@ -281,7 +296,7 @@ def test_wsgi_app_with_behind_name(fx_test_client):
 
 @mark.parametrize('arity', [0, 1, 2, 4])
 def test_wsgi_app_make_response_arity_check(arity):
-    class ExtendedWsgiApp(WsgiApp):
+    class ExtendedWsgiApp(LegacyWsgiApp if LEGACY else WsgiApp):
         def make_response(self, status_code, headers, content):
             return (status_code, headers, content, None)[:arity]
     wsgi_app = ExtendedWsgiApp(MusicServiceImpl())
@@ -620,9 +635,8 @@ It is an internal server error and should be fixed by server-side.'''
             typing._type_repr(NullDisallowedMethodServiceImpl)
         ),
         logging.ERROR,
-        '''None is an invalid return value for the return type ({0}) of {1}.\
+        '''None is an invalid return value for the return type of {0}.\
 null_disallowed_method() method.'''.format(
-            typing._type_repr(Point),
             typing._type_repr(NullDisallowedMethodServiceImpl)
         ),
     )
@@ -633,3 +647,15 @@ null_disallowed_method() method.'''.format(
         '_tag': 'internal_server_error',
         'message': expected_message,
     }
+
+
+def test_method_argument_error():
+    e = MethodArgumentError()
+    assert not e.errors
+    assert str(e) == ''
+    e.on_error('.foo', 'Message A.')
+    assert e.errors == {('.foo', 'Message A.')}
+    assert str(e) == '.foo: Message A.'
+    e.on_error('.bar', 'Message B.')
+    assert e.errors == {('.foo', 'Message A.'), ('.bar', 'Message B.')}
+    assert str(e) == '.foo: Message A.\n.bar: Message B.'

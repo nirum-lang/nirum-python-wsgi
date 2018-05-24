@@ -5,8 +5,7 @@ env:
   - FIXTURE_PATH=/tmp/schema_fixture/
   matrix:
   - NIRUM_URL=https://github.com/spoqa/nirum/releases/download/0.3.3/nirum-linux-x86_64
-  # - NIRUM_URL=https://nightly-builds.nirum.org/travis-builds/nirum-linux-x86_64
-  # Nightly build is broken as of 2018-03-20
+  - NIRUM_URL=https://nightly-builds.nirum.org/travis-builds/nirum-linux-x86_64
 install:
 - pip install tox-travis
 - ls -al
