@@ -25,7 +25,7 @@ from werkzeug.http import HTTP_STATUS_CODES
 from werkzeug.serving import run_simple
 from werkzeug.wrappers import Request, Response
 
-__version__ = '0.3.0'
+__version__ = '0.3.1'
 __all__ = (
     'AnnotationError', 'InvalidJsonError',
     'MethodArgumentError', 'MethodDispatch', 'MethodDispatchError',
