@@ -1,4 +1,5 @@
 import collections
+import io
 import json
 import logging
 import typing
@@ -15,6 +16,7 @@ from werkzeug.test import Client
 from werkzeug.wrappers import Response
 
 from nirum_wsgi import (AnnotationError, LegacyWsgiApp, MethodArgumentError,
+                        Request, Response as NirumResponse,
                         UriTemplateMatchResult, UriTemplateMatcher, WsgiApp,
                         import_string)
 
@@ -659,3 +661,59 @@ def test_method_argument_error():
     e.on_error('.bar', 'Message B.')
     assert e.errors == {('.foo', 'Message A.'), ('.bar', 'Message B.')}
     assert str(e) == '.foo: Message A.\n.bar: Message B.'
+
+
+def test_request():
+    stream = io.BytesIO()
+    stream.write(b'foobar')
+    stream.seek(0)
+    r = Request({
+        'REQUEST_METHOD': 'GET', 'PATH_INFO': '/foobar',
+        'wsgi.input': stream,
+        'QUERY_STRING': 'foo=1&bar=a&bar=b',
+        'SCRIPT_NAME': '',
+        'CONTENT_TYPE': 'plain/text',
+        'CONTENT_LENGTH': 6,
+        'SERVER_NAME': 'localhost',
+        'SERVER_PORT': '80',
+        'SERVER_PROTOCOL': 'HTTP/1.1',
+        'HTTP_VARY': 'Origin',
+        'HTTP_ORIGIN': 'http://example.com',
+        'HTTP_FOO_BAR': 'baz',
+    })
+    assert r.method == 'GET'
+    assert r.path == '/foobar'
+    assert r.raw == b'foobar'
+    assert r.text == 'foobar'
+    assert r.querystring == 'foo=1&bar=a&bar=b'
+    assert r.args['foo'] == '1'
+    assert isinstance(r.args['bar'], list)
+    assert 'a' in r.args['bar']
+    assert 'b' in r.args['bar']
+    assert r.headers == {
+        'Vary': 'Origin',
+        'Origin': 'http://example.com',
+        'Foo-Bar': 'baz',
+    }
+
+
+@mark.parametrize(
+    'status_code, expected_code',
+    [
+        (200, '200 OK'),
+        (400, '400 Bad Request'),
+        (500, '500 Internal Server Error'),
+        (404, '404 Not Found'),
+        (400, '400 Bad Request'),
+        (405, '405 Method Not Allowed'),
+    ]
+)
+def test_response(status_code, expected_code):
+    r = NirumResponse(b'foobar', status_code, [('Content-Type', 'plain/text')])
+    assert r.content == b'foobar'
+
+    def t(c, h):
+        assert c == expected_code
+        assert h == [('Content-Type', 'plain/text')]
+
+    assert b''.join(r({}, t)) == b'foobar'

@@ -6,6 +6,11 @@ Version 0.4.0
 
 To be released.
 
+- Made ``nirum-python-wsgi`` independent from `Werkzeug`_.  [`#284`_]
+
+.. _#284: https://github.com/spoqa/nirum/issues/284
+.. _Werkzeug: http://werkzeug.pocoo.org/
+
 
 Version 0.3.0
 -------------
