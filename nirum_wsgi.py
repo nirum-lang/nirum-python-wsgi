@@ -19,11 +19,10 @@ from nirum.deserialize import deserialize_meta
 from nirum.serialize import serialize_meta
 from nirum.service import Service
 from six import integer_types, text_type
-from six.moves import reduce
+from six.moves import http_client, reduce
 from six.moves.urllib import parse as urlparse
 from werkzeug.http import HTTP_STATUS_CODES
 from werkzeug.serving import run_simple
-from werkzeug.wrappers import Request, Response
 
 __version__ = '0.4.0'
 __all__ = (
@@ -44,6 +43,80 @@ PathMatch = collections.namedtuple('PathMatch', [
 UriTemplateRule = collections.namedtuple('UriTemplateRule', [
     'uri_template', 'matcher', 'verb', 'name'
 ])
+
+
+class Request(object):
+
+    def __init__(self, environ):
+        self.environ = environ
+        self._raw = None
+
+    @property
+    def method(self):
+        return self.environ['REQUEST_METHOD']
+
+    @property
+    def path(self):
+        return self.environ['PATH_INFO']
+
+    @property
+    def stream(self):
+        return self.environ['wsgi.input']
+
+    @property
+    def raw(self):
+        if self._raw is None:
+            self._raw = self.stream.read()
+        return self._raw
+
+    @property
+    def text(self):
+        return self.raw.decode('utf-8')
+
+    @property
+    def querystring(self):
+        return self.environ['QUERY_STRING']
+
+    @property
+    def args(self):
+        return {
+            key: value[0] if len(value) == 1 else value
+            for key, value in urlparse.parse_qs(self.querystring).items()
+        }
+
+    @property
+    def headers(self):
+        header_prefix = 'HTTP_'
+
+        def normalize(x):
+            header = x[len(header_prefix):]
+            return '-'.join(h[0] + h[1:].lower() for h in header.split('_'))
+
+        return {
+            normalize(k): v
+            for k, v in self.environ.items()
+            if k.startswith(header_prefix)
+        }
+
+
+class Response(object):
+
+    def __init__(self, content, status_code, headers, **kwargs):
+        self.content = content
+        self.status_code = status_code
+        self.raw_headers = headers
+
+    @property
+    def headers(self):
+        return dict(self.raw_headers)
+
+    def __call__(self, environ, start_response):
+        start_response(
+            '{} {}'.format(self.status_code,
+                           http_client.responses[self.status_code]),
+            self.raw_headers
+        )
+        return self.content,
 
 
 def is_optional_type(type_):
@@ -79,12 +152,11 @@ def match_request(rules, request_method, path_info, querystring):
 
 
 def parse_json_payload(request):
-    payload = request.get_data(as_text=True)
-    if payload:
+    if request.raw:
         try:
-            json_payload = json.loads(payload)
+            json_payload = json.loads(request.text)
         except (TypeError, ValueError):
-            raise InvalidJsonError(payload)
+            raise InvalidJsonError(request.text)
         else:
             return json_payload
     else:
@@ -254,8 +326,8 @@ class WsgiApp(object):
         # CORS
         cors_headers = [('Vary', 'Origin')]
         request_match, matched_verb = match_request(
-            self.rules, environ['REQUEST_METHOD'],
-            environ['PATH_INFO'], environ['QUERY_STRING']
+            self.rules, request.method,
+            request.path, request.querystring
         )
         if request_match:
             service_method = request_match.method_name
@@ -354,6 +426,7 @@ class WsgiApp(object):
                         )
                     )
                 else:
+                    response.raw_headers += match.cors_headers
                     for k, v in match.cors_headers:
                         if k in response.headers:
                             # FIXME: is it proper?

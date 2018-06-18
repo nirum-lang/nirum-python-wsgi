@@ -43,7 +43,6 @@ setup_requires = []
 install_requires = [
     'nirum >= 0.6.3',
     'six',
-    'Werkzeug >= 0.11, < 1.0',
 ]
 tests_require = [
     'flake8-import-order >= 0.17.1, < 1.0',
@@ -52,6 +51,7 @@ tests_require = [
     'pytest >= 3.5.1, < 4.0.0',
     'pytest-flake8 >= 1.0.1, < 1.1.0',
     'requests-mock >= 1.5.0, < 1.6.0',
+    'Werkzeug >= 0.11, < 1.0',
 ]
 extras_require = {
     'tests': tests_require,
